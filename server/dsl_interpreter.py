@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
 
 import re
@@ -14,13 +14,26 @@ from parser.grammar.AlgoDSLParser import AlgoDSLParser
 @dataclass
 class BubbleSortState:
     array: List[int]
+    original_array: List[int] = field(default_factory=list)
     i: int = 0  # outer pass
     j: int = 0  # inner index
     swapped_in_pass: bool = False
     completed: bool = False
+    history: List[str] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        if not self.original_array:
+            self.original_array = list(self.array)
+
+    def _record_action(self, summary: str) -> None:
+        """Store a human-readable description of the latest action."""
+        snapshot = f"Array: {self.array}"
+        self.history.append(f"{summary} | {snapshot}")
 
     def step(self) -> Dict[str, Any]:
         if self.completed:
+            explanation_text = "Sorting complete."
+            self._record_action(explanation_text)
             return {
                 "status": "success",
                 "type": "visualization_step",
@@ -31,12 +44,14 @@ class BubbleSortState:
                     "highlighted_indices": [],
                     "sorted_indices": list(range(len(self.array))),
                 },
-                "explanation": "Sorting complete.",
+                "explanation": explanation_text,
             }
 
         n = len(self.array)
         if n <= 1:
             self.completed = True
+            explanation_text = "Array of length 0 or 1 is already sorted."
+            self._record_action(explanation_text)
             return {
                 "status": "success",
                 "type": "visualization_step",
@@ -47,7 +62,7 @@ class BubbleSortState:
                     "highlighted_indices": [],
                     "sorted_indices": list(range(n)),
                 },
-                "explanation": "Array of length 0 or 1 is already sorted.",
+                "explanation": explanation_text,
             }
 
         # If inner loop finished, advance outer loop
@@ -55,6 +70,8 @@ class BubbleSortState:
             # If no swaps, early finish
             if not self.swapped_in_pass:
                 self.completed = True
+                explanation_text = "No swaps in the last pass; array is sorted."
+                self._record_action(explanation_text)
                 return {
                     "status": "success",
                     "type": "visualization_step",
@@ -65,7 +82,7 @@ class BubbleSortState:
                         "highlighted_indices": [],
                         "sorted_indices": list(range(n)),
                     },
-                    "explanation": "No swaps in the last pass; array is sorted.",
+                    "explanation": explanation_text,
                 }
             self.i += 1
             self.j = 0
@@ -73,6 +90,8 @@ class BubbleSortState:
 
             if self.i >= n - 1:
                 self.completed = True
+                explanation_text = "Sorting complete."
+                self._record_action(explanation_text)
                 return {
                     "status": "success",
                     "type": "visualization_step",
@@ -83,7 +102,7 @@ class BubbleSortState:
                         "highlighted_indices": [],
                         "sorted_indices": list(range(n)),
                     },
-                    "explanation": "Sorting complete.",
+                    "explanation": explanation_text,
                 }
 
         idx_a = self.j
@@ -103,6 +122,7 @@ class BubbleSortState:
 
         self.j += 1
 
+        self._record_action(explanation)
         return {
             "status": "success",
             "type": "visualization_step",
@@ -849,14 +869,117 @@ class AlgorithmSession:
 
 
 class AlgorithmSessionManager:
-    VISUALIZE_RE = re.compile(
-        r"^\s*visualize\s+(?P<algo>[a-zA-Z ]+)\s+on\s*\[(?P<array>[^\]]*)\]\s*$",
-        re.IGNORECASE,
-    )
-
-    EXPLAIN_RE = re.compile(r"^\s*explain\s*$", re.IGNORECASE)
-    NEXT_RE = re.compile(r"^\s*next\s*$", re.IGNORECASE)
-    RESET_RE = re.compile(r"^\s*reset\s*$", re.IGNORECASE)
+    def _parse_with_antlr(self, command: str) -> Optional[Dict[str, Any]]:
+        """Parse command using ANTLR grammar. Returns command type and extracted data."""
+        try:
+            input_stream = InputStream(command)
+            lexer = AlgoDSLLexer(input_stream)
+            token_stream = CommonTokenStream(lexer)
+            parser = AlgoDSLParser(token_stream)
+            
+            # Parse the command
+            tree = parser.command()
+            
+            # Check for parse errors
+            if parser.getNumberOfSyntaxErrors() > 0:
+                return None
+            
+            if tree.getChildCount() == 0:
+                return None
+            
+            child = tree.getChild(0)
+            
+            # Menu command
+            if isinstance(child, AlgoDSLParser.MenuCommandContext):
+                return {"type": "menu"}
+            
+            # Next command
+            if isinstance(child, AlgoDSLParser.NextCommandContext):
+                return {"type": "next"}
+            
+            # Explain command
+            if isinstance(child, AlgoDSLParser.ExplainCommandContext):
+                return {"type": "explain"}
+            
+            # Reset command
+            if isinstance(child, AlgoDSLParser.ResetCommandContext):
+                return {"type": "reset"}
+            
+            # Menu selection - check for specific alternatives
+            if isinstance(child, AlgoDSLParser.MenuSelectionContext):
+                # Check specific alternative types (these inherit from MenuSelectionContext)
+                if isinstance(child, AlgoDSLParser.MenuSortingContext):
+                    return {"type": "menu_selection", "menu": "sort"}
+                elif isinstance(child, AlgoDSLParser.MenuPathfindingContext):
+                    return {"type": "menu_selection", "menu": "path"}
+                elif isinstance(child, AlgoDSLParser.MenuDataStructuresContext):
+                    return {"type": "menu_selection", "menu": "struct"}
+                else:
+                    # Fallback: check token type
+                    first_token = child.getStart()
+                    if first_token.type == AlgoDSLParser.SORTING_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_ONE:
+                        return {"type": "menu_selection", "menu": "sort"}
+                    elif first_token.type == AlgoDSLParser.PATHFINDING_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_TWO:
+                        return {"type": "menu_selection", "menu": "path"}
+                    elif first_token.type == AlgoDSLParser.DATA_STRUCTURE_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_THREE:
+                        return {"type": "menu_selection", "menu": "struct"}
+            
+            # Sorting algorithm selection
+            if isinstance(child, AlgoDSLParser.SortingAlgorithmSelectionContext):
+                first_token = child.getStart()
+                token_type = first_token.type
+                # Map token types to algorithm numbers
+                algo_map = {
+                    AlgoDSLParser.NUMBER_ONE: "1",
+                    AlgoDSLParser.NUMBER_TWO: "2",
+                    AlgoDSLParser.NUMBER_THREE: "3",
+                    AlgoDSLParser.NUMBER_FOUR: "4",
+                    AlgoDSLParser.NUMBER_FIVE: "5",
+                    AlgoDSLParser.NUMBER_SIX: "6",
+                    AlgoDSLParser.BUBBLE_KEYWORDS: "1",
+                    AlgoDSLParser.MERGE_KEYWORDS: "2",
+                    AlgoDSLParser.SELECTION_KEYWORDS: "3",
+                    AlgoDSLParser.INSERTION_KEYWORDS: "4",
+                    AlgoDSLParser.QUICK_KEYWORDS: "5",
+                    AlgoDSLParser.HEAP_KEYWORDS: "6",
+                }
+                if token_type in algo_map:
+                    return {"type": "sorting_algorithm", "selection": algo_map[token_type]}
+            
+            # Array input
+            if isinstance(child, AlgoDSLParser.ArrayInputContext):
+                numbers = []
+                for i in range(child.getChildCount()):
+                    node = child.getChild(i)
+                    if hasattr(node, 'getText'):
+                        text = node.getText()
+                        try:
+                            numbers.append(int(text))
+                        except ValueError:
+                            pass
+                return {"type": "array_input", "array": numbers}
+            
+            # Visualize command (legacy)
+            if isinstance(child, AlgoDSLParser.VisualizeCommandContext):
+                array_literal = child.arrayLiteral()
+                if array_literal:
+                    array_input_ctx = array_literal.arrayInput()
+                    if array_input_ctx:
+                        numbers = []
+                        for i in range(array_input_ctx.getChildCount()):
+                            node = array_input_ctx.getChild(i)
+                            if hasattr(node, 'getText'):
+                                text = node.getText()
+                                try:
+                                    numbers.append(int(text))
+                                except ValueError:
+                                    pass
+                        return {"type": "visualize", "algorithm": "bubble sort", "array": numbers}
+            
+            return None
+        except Exception as e:
+            # If ANTLR parsing fails, return None
+            return None
 
     # Available sorting algorithms
     SORTING_ALGORITHMS = [
@@ -867,6 +990,55 @@ class AlgorithmSessionManager:
         ("5", "Quick Sort", "quick"),
         ("6", "Heap Sort", "heap")
     ]
+
+    @staticmethod
+    def _get_algorithm_principle(algorithm_name: str) -> str:
+        """Return the principle/overview explanation for an algorithm."""
+        principles = {
+            "Bubble Sort": (
+                "Bubble Sort is a simple comparison-based sorting algorithm. "
+                "It repeatedly steps through the list, compares adjacent elements, and swaps them if they are in the wrong order. "
+                "The pass through the list is repeated until no swaps are needed, which means the list is sorted. "
+                "The algorithm gets its name because smaller elements 'bubble' to the top of the list. "
+                "Time Complexity: O(n²) worst/average case, O(n) best case (when already sorted). "
+                "Space Complexity: O(1) - in-place sorting."
+            ),
+            "Selection Sort": (
+                "Selection Sort divides the input list into two parts: a sorted sublist and an unsorted sublist. "
+                "The algorithm repeatedly finds the minimum element from the unsorted part and places it at the beginning of the sorted part. "
+                "This process continues until the entire list is sorted. "
+                "Time Complexity: O(n²) for all cases. "
+                "Space Complexity: O(1) - in-place sorting."
+            ),
+            "Insertion Sort": (
+                "Insertion Sort builds the sorted array one element at a time. "
+                "It takes each element from the input and inserts it into the correct position in the already sorted portion. "
+                "The algorithm is similar to how you might sort playing cards in your hands. "
+                "Time Complexity: O(n²) worst/average case, O(n) best case (when already sorted). "
+                "Space Complexity: O(1) - in-place sorting."
+            ),
+            "Quick Sort": (
+                "Quick Sort is a divide-and-conquer algorithm. "
+                "It picks a 'pivot' element and partitions the array around the pivot, placing smaller elements before it and larger elements after it. "
+                "The algorithm then recursively sorts the sub-arrays on either side of the pivot. "
+                "Time Complexity: O(n log n) average case, O(n²) worst case (when pivot is always smallest/largest). "
+                "Space Complexity: O(log n) average case due to recursion stack."
+            ),
+            "Merge Sort": (
+                "Merge Sort is a divide-and-conquer algorithm that divides the array into two halves, sorts them separately, and then merges them back together. "
+                "The algorithm recursively splits the array until each sub-array contains a single element (which is already sorted), then merges them in sorted order. "
+                "Time Complexity: O(n log n) for all cases - consistent performance. "
+                "Space Complexity: O(n) - requires additional space for merging."
+            ),
+            "Heap Sort": (
+                "Heap Sort uses a binary heap data structure to sort elements. "
+                "First, it builds a max-heap from the input array, where the largest element is at the root. "
+                "Then it repeatedly extracts the maximum element from the heap and places it at the end of the sorted portion, rebuilding the heap after each extraction. "
+                "Time Complexity: O(n log n) for all cases. "
+                "Space Complexity: O(1) - in-place sorting (if we ignore the recursion stack)."
+            ),
+        }
+        return principles.get(algorithm_name, "Algorithm principle not available.")
 
     def __init__(self) -> None:
         self.sessions: Dict[str, AlgorithmSession] = {}
@@ -879,96 +1051,325 @@ class AlgorithmSessionManager:
     def handle_command(self, session_id: str, command: str) -> Dict[str, Any]:
         session = self._get_or_create(session_id)
 
-        # Handle array input if waiting for array
+        # Handle array input if waiting for array (check this first, before ANTLR)
         if session.waiting_for_array:
-            return self._handle_array_input(session, command)
-
-        # Handle sorting algorithm selection if in sorting menu
-        if session.menu_state == "sort":
-            algo_selection = self._try_parse_sorting_algorithm(command)
-            if algo_selection is not None:
-                return self._handle_sorting_algorithm_selection(session, algo_selection)
-            else:
-                # If in sorting menu but no valid selection, show menu again
-                return self._get_sorting_menu()
-
-        # First try ANTLR to detect top-level menu selections
-        menu = self._try_parse_menu(command)
-        if menu is not None:
-            # Set menu state and return appropriate sub-menu
-            session.menu_state = menu
-            if menu == "sort":
-                return self._get_sorting_menu()
-            elif menu == "path":
-                session.menu_state = None  # Reset for now
-                return {
-                    "status": "success",
-                    "type": "info",
-                    "message": "Got pathfinding command",
-                }
-            elif menu == "struct":
-                session.menu_state = None  # Reset for now
-                return {
-                    "status": "success",
-                    "type": "info", 
-                    "message": "Got structure command",
-                }
-
-        # visualize command
-        m = self.VISUALIZE_RE.match(command)
-        if m:
-            algo = m.group("algo").strip().lower()
-            array_str = m.group("array").strip()
+            # Try to parse as array with ANTLR first
+            parsed = self._parse_with_antlr(command)
+            if parsed and parsed.get("type") == "array_input":
+                arr = parsed.get("array", [])
+                if arr:
+                    session.waiting_for_array = False
+                    algorithm = session.selected_algorithm
+                    
+                    if algorithm == "Bubble Sort":
+                        session.algorithm = "Bubble Sort"
+                        session.state = BubbleSortState(array=arr)
+                    elif algorithm == "Selection Sort":
+                        session.algorithm = "Selection Sort"
+                        session.state = SelectionSortState(array=arr)
+                    elif algorithm == "Insertion Sort":
+                        session.algorithm = "Insertion Sort"
+                        session.state = InsertionSortState(array=arr)
+                    elif algorithm == "Quick Sort":
+                        session.algorithm = "Quick Sort"
+                        session.state = QuickSortState(array=arr)
+                    elif algorithm == "Merge Sort":
+                        session.algorithm = "Merge Sort"
+                        session.state = MergeSortState(array=arr)
+                    elif algorithm == "Heap Sort":
+                        session.algorithm = "Heap Sort"
+                        session.state = HeapSortState(array=arr)
+                    else:
+                        return {
+                            "status": "error",
+                            "message": f"Unknown algorithm: {algorithm}"
+                        }
+                    
+                    return session.state.step()
+            
+            # Fallback: try to parse as array string
             try:
-                arr = self._parse_array(array_str)
-            except ValueError:
-                raise ValueError(
-                    "Unknown command or invalid syntax. Try something like: 'visualize bubble sort on [1, 2, 3]'"
-                )
-
-            if algo in ("bubble sort", "bubblesort"):
-                session.algorithm = "Bubble Sort"
-                session.state = BubbleSortState(array=arr)
-                # Return first step immediately
+                arr = self._parse_array(command)
+                session.waiting_for_array = False
+                algorithm = session.selected_algorithm
+                
+                if algorithm == "Bubble Sort":
+                    session.algorithm = "Bubble Sort"
+                    session.state = BubbleSortState(array=arr)
+                elif algorithm == "Selection Sort":
+                    session.algorithm = "Selection Sort"
+                    session.state = SelectionSortState(array=arr)
+                elif algorithm == "Insertion Sort":
+                    session.algorithm = "Insertion Sort"
+                    session.state = InsertionSortState(array=arr)
+                elif algorithm == "Quick Sort":
+                    session.algorithm = "Quick Sort"
+                    session.state = QuickSortState(array=arr)
+                elif algorithm == "Merge Sort":
+                    session.algorithm = "Merge Sort"
+                    session.state = MergeSortState(array=arr)
+                elif algorithm == "Heap Sort":
+                    session.algorithm = "Heap Sort"
+                    session.state = HeapSortState(array=arr)
+                else:
+                    return {
+                        "status": "error",
+                        "message": f"Unknown algorithm: {algorithm}"
+                    }
+                
                 return session.state.step()
+            except ValueError:
+                return {
+                    "status": "error",
+                    "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
+                }
+
+        # Handle sorting algorithm selection if in sorting menu (check before ANTLR)
+        if session.menu_state == "sort":
+            # Try to parse as sorting algorithm selection
+            parsed = self._parse_with_antlr(command)
+            if parsed and parsed.get("type") == "sorting_algorithm":
+                return self._handle_sorting_algorithm_selection(session, parsed["selection"])
             else:
-                raise ValueError(
-                    "Unknown algorithm. Supported: Bubble Sort."
+                # Also check if it's a number that could be an algorithm
+                cmd_lower = command.strip().lower()
+                if cmd_lower in ["1", "2", "3", "4", "5", "6"]:
+                    return self._handle_sorting_algorithm_selection(session, cmd_lower)
+                # Check for keyword matches
+                for num, name, keyword in self.SORTING_ALGORITHMS:
+                    if keyword in cmd_lower or name.lower() in cmd_lower:
+                        return self._handle_sorting_algorithm_selection(session, num)
+                # Invalid selection, show menu again
+                return self._get_sorting_menu()
+
+        # Try to parse with ANTLR for other commands
+        parsed = self._parse_with_antlr(command)
+        
+        if parsed:
+            cmd_type = parsed.get("type")
+            if session.waiting_for_array:
+                if cmd_type == "array_input":
+                    # Use the parsed array from ANTLR
+                    arr = parsed.get("array", [])
+                    if arr:
+                        session.waiting_for_array = False
+                        algorithm = session.selected_algorithm
+                        
+                        if algorithm == "Bubble Sort":
+                            session.algorithm = "Bubble Sort"
+                            session.state = BubbleSortState(array=arr)
+                        elif algorithm == "Selection Sort":
+                            session.algorithm = "Selection Sort"
+                            session.state = SelectionSortState(array=arr)
+                        elif algorithm == "Insertion Sort":
+                            session.algorithm = "Insertion Sort"
+                            session.state = InsertionSortState(array=arr)
+                        elif algorithm == "Quick Sort":
+                            session.algorithm = "Quick Sort"
+                            session.state = QuickSortState(array=arr)
+                        elif algorithm == "Merge Sort":
+                            session.algorithm = "Merge Sort"
+                            session.state = MergeSortState(array=arr)
+                        elif algorithm == "Heap Sort":
+                            session.algorithm = "Heap Sort"
+                            session.state = HeapSortState(array=arr)
+                        else:
+                            return {
+                                "status": "error",
+                                "message": f"Unknown algorithm: {algorithm}"
+                            }
+                        
+                        return session.state.step()
+                    else:
+                        return {
+                            "status": "error",
+                            "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
+                        }
+                else:
+                    # Try to parse as array even if ANTLR didn't recognize it
+                    try:
+                        arr = self._parse_array(command)
+                        session.waiting_for_array = False
+                        algorithm = session.selected_algorithm
+                        
+                        if algorithm == "Bubble Sort":
+                            session.algorithm = "Bubble Sort"
+                            session.state = BubbleSortState(array=arr)
+                        elif algorithm == "Selection Sort":
+                            session.algorithm = "Selection Sort"
+                            session.state = SelectionSortState(array=arr)
+                        elif algorithm == "Insertion Sort":
+                            session.algorithm = "Insertion Sort"
+                            session.state = InsertionSortState(array=arr)
+                        elif algorithm == "Quick Sort":
+                            session.algorithm = "Quick Sort"
+                            session.state = QuickSortState(array=arr)
+                        elif algorithm == "Merge Sort":
+                            session.algorithm = "Merge Sort"
+                            session.state = MergeSortState(array=arr)
+                        elif algorithm == "Heap Sort":
+                            session.algorithm = "Heap Sort"
+                            session.state = HeapSortState(array=arr)
+                        else:
+                            return {
+                                "status": "error",
+                                "message": f"Unknown algorithm: {algorithm}"
+                            }
+                        
+                        return session.state.step()
+                    except ValueError:
+                        return {
+                            "status": "error",
+                            "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
+                        }
+            
+            # Handle sorting algorithm selection if in sorting menu
+            if session.menu_state == "sort":
+                if cmd_type == "sorting_algorithm":
+                    return self._handle_sorting_algorithm_selection(session, parsed["selection"])
+                else:
+                    # Invalid selection, show menu again
+                    return self._get_sorting_menu()
+            
+            # Menu command
+            if cmd_type == "menu":
+                session.menu_state = None
+                session.waiting_for_array = False
+                return self._get_main_menu()
+            
+            # Menu selection
+            if cmd_type == "menu_selection":
+                menu = parsed["menu"]
+                session.menu_state = menu
+                if menu == "sort":
+                    return self._get_sorting_menu()
+                elif menu == "path":
+                    session.menu_state = None
+                    return {
+                        "status": "success",
+                        "type": "info",
+                        "message": "Got pathfinding command",
+                    }
+                elif menu == "struct":
+                    session.menu_state = None
+                    return {
+                        "status": "success",
+                        "type": "info",
+                        "message": "Got structure command",
+                    }
+            
+            # Next command
+            if cmd_type == "next":
+                if not session.state:
+                    raise ValueError(
+                        "No active algorithm. Start a sorting algorithm first."
+                    )
+                return session.state.step()
+            
+            # Explain command
+            if cmd_type == "explain":
+                if not session.algorithm or not session.state:
+                    raise ValueError("No active algorithm to explain. Start a sorting session first.")
+                
+                algorithm_name = session.algorithm
+                state = session.state
+                
+                # Get algorithm principle
+                principle = self._get_algorithm_principle(algorithm_name)
+                
+                # Build step-by-step explanation based on algorithm type
+                step_explanation = ""
+                
+                if isinstance(state, BubbleSortState):
+                    recent_history = state.history[-5:] if hasattr(state, 'history') else []
+                    history_text = (
+                        "\n".join(f"- {entry}" for entry in recent_history)
+                        if recent_history
+                        else "- The algorithm is ready to start but no comparisons have been made yet."
+                    )
+                    if not state.completed and len(state.array) > 1:
+                        if state.j >= len(state.array) - 1:
+                            next_hint = (
+                                f"The next pass will begin at index 0 after completing pass {state.i + 1}."
+                            )
+                        else:
+                            next_hint = (
+                                f"Upcoming action: compare indices {state.j} and {state.j + 1} "
+                                f"({state.array[state.j]} vs {state.array[state.j + 1]})."
+                            )
+                    elif state.completed:
+                        next_hint = "All elements are sorted. No further actions are required."
+                    else:
+                        next_hint = "Array of length 0 or 1; no actions required."
+
+                    original = state.original_array if hasattr(state, 'original_array') else state.array
+                    step_explanation = (
+                        f"Current Progress:\n"
+                        f"- Original array: {original}\n"
+                        f"- Current array: {state.array}\n"
+                        f"- Pass completed: {state.i}\n"
+                        f"- Recent actions:\n{history_text}\n"
+                        f"- {next_hint}"
+                    )
+                elif isinstance(state, (SelectionSortState, InsertionSortState, QuickSortState, MergeSortState, HeapSortState)):
+                    # For other algorithms, provide current state information
+                    if hasattr(state, 'completed') and state.completed:
+                        step_explanation = (
+                            f"Current Progress:\n"
+                            f"- Array: {state.array}\n"
+                            f"- Status: Sorting complete. All elements are in sorted order."
+                        )
+                    else:
+                        step_explanation = (
+                            f"Current Progress:\n"
+                            f"- Array: {state.array}\n"
+                            f"- Status: Algorithm is in progress. Use 'next' to see the next step."
+                        )
+                else:
+                    step_explanation = (
+                        f"Current Progress:\n"
+                        f"- Array: {state.array if hasattr(state, 'array') else 'N/A'}\n"
+                        f"- Status: Algorithm is running."
+                    )
+                
+                # Combine principle and step-by-step explanation
+                explanation = (
+                    f"=== {algorithm_name} Explanation ===\n\n"
+                    f"Algorithm Principle:\n{principle}\n\n"
+                    f"{step_explanation}"
                 )
 
-        # next command
-        if self.NEXT_RE.match(command):
-            if not session.state:
-                raise ValueError(
-                    "No active algorithm. Start with: 'visualize bubble sort on [5, 2, 8, 1, 9]'"
-                )
-            return session.state.step()
-
-        # explain command
-        if self.EXPLAIN_RE.match(command):
-            if session.algorithm == "Bubble Sort":
                 return {
                     "status": "success",
                     "type": "explanation",
-                    "algorithm": "Bubble Sort",
-                    "explanation": (
-                        "Bubble Sort has worst and average time complexity O(n^2), "
-                        "best case O(n) when the array is already sorted."
-                    ),
+                    "algorithm": algorithm_name,
+                    "explanation": explanation,
                 }
-            raise ValueError("No active algorithm to explain.")
-
-        # reset command
-        if self.RESET_RE.match(command):
-            session.reset()
-            return {
-                "status": "success",
-                "type": "info",
-                "message": "Session reset.",
-            }
-
+            
+            # Reset command
+            if cmd_type == "reset":
+                session.reset()
+                return {
+                    "status": "success",
+                    "type": "info",
+                    "message": "Session reset.",
+                }
+            
+            # Visualize command (legacy)
+            if cmd_type == "visualize":
+                algo = parsed.get("algorithm", "bubble sort")
+                arr = parsed.get("array", [])
+                if algo == "bubble sort":
+                    session.algorithm = "Bubble Sort"
+                    session.state = BubbleSortState(array=arr)
+                    return session.state.step()
+                else:
+                    raise ValueError("Unknown algorithm. Supported: Bubble Sort.")
+        
+        # If ANTLR parsing failed, return error
         raise ValueError(
-            "Unknown command or invalid syntax. Try something like: 'visualize bubble sort on [1, 2, 3]'"
+            "Unknown command or invalid syntax. Available commands: 'menu', 'sorting', '1-6' (algorithm selection), "
+            "'next', 'explain', 'reset', or array input (e.g., '5,2,8,1,9')."
         )
 
     @staticmethod
@@ -1003,6 +1404,21 @@ class AlgorithmSessionManager:
             return "struct"
             
         return None
+
+    def _get_main_menu(self) -> Dict[str, Any]:
+        """Return the main selection menu."""
+        menu_text = (
+            "Hello, what are we going to do today, developer?\n"
+            "1. Sorting algorithms.\n"
+            "2. Pathfinding algorithms.\n"
+            "3. Data structures"
+        )
+        
+        return {
+            "status": "success",
+            "type": "greeting",
+            "message": menu_text,
+        }
 
     def _get_sorting_menu(self) -> Dict[str, Any]:
         """Return the sorting algorithms menu."""

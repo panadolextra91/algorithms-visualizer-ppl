@@ -1,1 +1,73 @@
+# Cursor IDE
 .cursor
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+ENV/
+.venv
+*.egg-info/
+dist/
+build/
+
+# Server
+server/.env
+server/__pycache__/
+server/**/__pycache__/
+server/**/*.pyc
+
+# Node.js / React Native
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Client
+algorithms-visualizer-client/node_modules/
+algorithms-visualizer-client/.expo/
+algorithms-visualizer-client/.expo-shared/
+algorithms-visualizer-client/dist/
+algorithms-visualizer-client/.env
+algorithms-visualizer-client/.env.local
+
+# iOS
+algorithms-visualizer-client/ios/Pods/
+algorithms-visualizer-client/ios/build/
+algorithms-visualizer-client/ios/*.xcworkspace/xcuserdata/
+algorithms-visualizer-client/ios/*.xcodeproj/xcuserdata/
+algorithms-visualizer-client/ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# Android
+algorithms-visualizer-client/android/.gradle/
+algorithms-visualizer-client/android/build/
+algorithms-visualizer-client/android/app/build/
+algorithms-visualizer-client/android/.idea/
+algorithms-visualizer-client/android/local.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Logs
+*.log
+logs/
+
+# Testing
+coverage/
+.nyc_output/
+
+# EAS
+algorithms-visualizer-client/.eas/
