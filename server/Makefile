@@ -1,6 +1,6 @@
-ANTLR_JAR=antlr4-4.9.2-complete.jar
-GRAMMAR=grammar/AlgoDSL.g4
-OUT_DIR=parser
+ANTLR_JAR=server/antlr4-4.9.2-complete.jar
+GRAMMAR=server/grammar/AlgoDSL.g4
+OUT_DIR=server/parser
 
 .PHONY: generate clean
 
@@ -10,5 +10,6 @@ generate:
 
 clean:
 	rm -rf $(OUT_DIR)
+
 
 

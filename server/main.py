@@ -1,14 +1,12 @@
-from typing import Any, Dict, List, Optional
-import os
-import re
-from dotenv import load_dotenv
+from typing import Any, Dict
+
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from dsl_interpreter import AlgorithmSessionManager
-
-# Load environment variables from .env file
-load_dotenv()
+try:
+    from .dsl_interpreter import AlgorithmSessionManager
+except ImportError:
+    from dsl_interpreter import AlgorithmSessionManager  # type: ignore
 
 
 app = FastAPI(title="Algorithms Visualizer Server")
@@ -40,16 +38,10 @@ def root() -> Dict[str, str]:
 
 @app.get("/greeting")
 def greeting() -> Dict[str, Any]:
-    return {
-        "status": "success",
-        "type": "greeting",
-        "message": (
-            "Hello, what are we going to do today, developer?\n"
-            "1. Sorting algorithms.\n"
-            "2. Pathfinding algorithms.\n"
-            "3. Data structures"
-        ),
-    }
+    """
+    Return the main menu so the client can display it immediately.
+    """
+    return AlgorithmSessionManager._menu_payload()
 
 
 
