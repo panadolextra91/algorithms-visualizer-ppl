@@ -73,7 +73,6 @@ arrayLiteral
     ;
 
 // Tokens
-
 // Menu command
 MENU: 'menu';
 

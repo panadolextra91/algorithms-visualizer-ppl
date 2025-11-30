@@ -1,1044 +1,675 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Any, Callable, Dict, List, Optional
 
 import re
 
-# ANTLR runtime imports
-from antlr4 import InputStream, CommonTokenStream
-from parser.grammar.AlgoDSLLexer import AlgoDSLLexer
-from parser.grammar.AlgoDSLParser import AlgoDSLParser
+MENU_SORTING_KEYWORDS = {
+    "sorting algorithms",
+    "sorting algorithm",
+    "sort algorithms",
+    "sort algorithm",
+    "sorting",
+    "sort",
+}
+MENU_PATHFINDING_KEYWORDS = {
+    "pathfinding algorithms",
+    "pathfinding algorithm",
+    "path algorithms",
+    "path algorithm",
+    "pathfinding",
+    "path",
+}
+MENU_DATA_STRUCTURE_KEYWORDS = {
+    "data structures",
+    "data structure",
+    "structures",
+    "structure",
+    "data",
+}
+
+MENU_SELECTION_NUMBERS = {
+    "sorting": {"1"},
+    "pathfinding": {"2"},
+    "data_structures": {"3"},
+}
+
+SORTING_NUMBER_TO_ALGORITHM = {
+    "1": "Bubble Sort",
+    "2": "Merge Sort",
+    "3": "Selection Sort",
+    "4": "Insertion Sort",
+    "5": "Quick Sort",
+    "6": "Heap Sort",
+}
+
+SORTING_SELECTION_KEYWORDS = {
+    "bubble sort": "Bubble Sort",
+    "bubblesort": "Bubble Sort",
+    "bubble": "Bubble Sort",
+    "merge sort": "Merge Sort",
+    "mergesort": "Merge Sort",
+    "merge": "Merge Sort",
+    "selection sort": "Selection Sort",
+    "selectionsort": "Selection Sort",
+    "selection": "Selection Sort",
+    "insertion sort": "Insertion Sort",
+    "insertionsort": "Insertion Sort",
+    "insertion": "Insertion Sort",
+    "quick sort": "Quick Sort",
+    "quicksort": "Quick Sort",
+    "quick": "Quick Sort",
+    "heap sort": "Heap Sort",
+    "heapsort": "Heap Sort",
+    "heap": "Heap Sort",
+}
+
+MAIN_MENU_MESSAGE = (
+    "Hi, what are you going to explore today?\n\n"
+    "1. Sorting algorithms\n"
+    "2. Pathfinding algorithms\n"
+    "3. Data structures\n\n"
+    "Please select one of these algorithms!"
+)
+
+SORTING_MENU_MESSAGE = (
+    "Sorting Algorithms:\n"
+    "1. Bubble Sort\n"
+    "2. Merge Sort\n"
+    "3. Selection Sort\n"
+    "4. Insertion Sort\n"
+    "5. Quick Sort\n"
+    "6. Heap Sort\n"
+    "Reply with the algorithm name or number, or type 'menu' to go back."
+)
+
+ARRAY_INPUT_RE = re.compile(r"^\s*-?\d+(?:\s*,\s*-?\d+)*\s*$")
 
 
-@dataclass
-class BubbleSortState:
-    array: List[int]
-    original_array: List[int] = field(default_factory=list)
-    i: int = 0  # outer pass
-    j: int = 0  # inner index
-    swapped_in_pass: bool = False
-    completed: bool = False
-    history: List[str] = field(default_factory=list)
+def _make_step(
+    algorithm: str,
+    array: List[int],
+    highlighted: Optional[List[int]],
+    sorted_indices: Optional[List[int]],
+    explanation: str,
+    step_number: int,
+) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "visualization_step",
+        "algorithm": algorithm,
+        "step": step_number,
+        "data": {
+            "array": list(array),
+            "highlighted_indices": highlighted or [],
+            "sorted_indices": sorted_indices or [],
+        },
+        "explanation": explanation,
+    }
 
-    def __post_init__(self) -> None:
-        if not self.original_array:
-            self.original_array = list(self.array)
 
-    def _record_action(self, summary: str) -> None:
-        """Store a human-readable description of the latest action."""
-        snapshot = f"Array: {self.array}"
-        self.history.append(f"{summary} | {snapshot}")
+def _complete_step(algorithm: str, array: List[int], step_number: int) -> Dict[str, Any]:
+    return _make_step(
+        algorithm=algorithm,
+        array=array,
+        highlighted=[],
+        sorted_indices=list(range(len(array))),
+        explanation="Sorting complete.",
+        step_number=step_number,
+    )
 
-    def step(self) -> Dict[str, Any]:
-        if self.completed:
-            explanation_text = "Sorting complete."
-            self._record_action(explanation_text)
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Bubble Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": explanation_text,
-            }
 
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            explanation_text = "Array of length 0 or 1 is already sorted."
-            self._record_action(explanation_text)
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Bubble Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": explanation_text,
-            }
-
-        # If inner loop finished, advance outer loop
-        if self.j >= n - self.i - 1:
-            # If no swaps, early finish
-            if not self.swapped_in_pass:
-                self.completed = True
-                explanation_text = "No swaps in the last pass; array is sorted."
-                self._record_action(explanation_text)
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Bubble Sort",
-                    "step": self.i,
-                    "data": {
-                        "array": self.array,
-                        "highlighted_indices": [],
-                        "sorted_indices": list(range(n)),
-                    },
-                    "explanation": explanation_text,
-                }
-            self.i += 1
-            self.j = 0
-            self.swapped_in_pass = False
-
-            if self.i >= n - 1:
-                self.completed = True
-                explanation_text = "Sorting complete."
-                self._record_action(explanation_text)
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Bubble Sort",
-                    "step": self.i,
-                    "data": {
-                        "array": self.array,
-                        "highlighted_indices": [],
-                        "sorted_indices": list(range(n)),
-                    },
-                    "explanation": explanation_text,
-                }
-
-        idx_a = self.j
-        idx_b = self.j + 1
-        a = self.array[idx_a]
-        b = self.array[idx_b]
-
-        explanation = (
-            f"Comparing elements at index {idx_a} ({a}) and index {idx_b} ({b}). "
+def generate_bubble_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    steps: List[Dict[str, Any]] = []
+    n = len(arr)
+    step = 1
+    if n <= 1:
+        steps.append(
+            _make_step(
+                "Bubble Sort",
+                arr,
+                [],
+                list(range(n)),
+                "Array of length 0 or 1 is already sorted.",
+                step,
+            )
         )
-        if a > b:
-            self.array[idx_a], self.array[idx_b] = self.array[idx_b], self.array[idx_a]
-            self.swapped_in_pass = True
-            explanation += "Since the left is greater, they are swapped."
+        return steps
+
+    for i in range(n):
+        swapped = False
+        for j in range(n - i - 1):
+            explanation = (
+                f"Comparing index {j} ({arr[j]}) with index {j + 1} ({arr[j + 1]})."
+            )
+            if arr[j] > arr[j + 1]:
+                arr[j], arr[j + 1] = arr[j + 1], arr[j]
+                swapped = True
+                explanation += " Swapped to ensure the greater value bubbles right."
+            else:
+                explanation += " Already in order."
+
+            sorted_part = list(range(n - i, n)) if i > 0 else []
+            steps.append(
+                _make_step(
+                    "Bubble Sort",
+                    arr,
+                    [j, j + 1],
+                    sorted_part,
+                    explanation,
+                    step,
+                )
+            )
+            step += 1
+        if not swapped:
+            break
+
+    steps.append(_complete_step("Bubble Sort", arr, step))
+    return steps
+
+
+def generate_selection_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    n = len(arr)
+    steps: List[Dict[str, Any]] = []
+    step = 1
+    for i in range(n):
+        min_idx = i
+        for j in range(i + 1, n):
+            explanation = (
+                f"Comparing index {j} ({arr[j]}) with current minimum at index {min_idx} ({arr[min_idx]})."
+            )
+            if arr[j] < arr[min_idx]:
+                min_idx = j
+                explanation += " New minimum found."
+            steps.append(
+                _make_step(
+                    "Selection Sort",
+                    arr,
+                    [min_idx, j],
+                    list(range(i)),
+                    explanation,
+                    step,
+                )
+            )
+            step += 1
+        if min_idx != i:
+            arr[i], arr[min_idx] = arr[min_idx], arr[i]
+            explanation = f"Swapping index {i} with minimum index {min_idx}."
+            highlight = [i, min_idx]
         else:
-            explanation += "No swap needed."
-
-        self.j += 1
-
-        self._record_action(explanation)
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Bubble Sort",
-            "step": self.i + 1,
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": [idx_a, idx_b],
-                "sorted_indices": list(range(len(self.array) - self.i, len(self.array)))
-                if self.i > 0
-                else [],
-            },
-            "explanation": explanation,
-        }
+            explanation = f"Element at index {i} is already the smallest in the remaining array."
+            highlight = [i]
+        steps.append(
+            _make_step(
+                "Selection Sort",
+                arr,
+                highlight,
+                list(range(i + 1)),
+                explanation,
+                step,
+            )
+        )
+        step += 1
+    steps.append(_complete_step("Selection Sort", arr, step))
+    return steps
 
 
-@dataclass
-class SelectionSortState:
-    array: List[int]
-    i: int = 0  # outer loop index
-    min_idx: int = 0  # index of minimum element
-    j: int = 0  # inner loop index
-    completed: bool = False
+def generate_insertion_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    steps: List[Dict[str, Any]] = []
+    n = len(arr)
+    step = 1
+    for i in range(1, n):
+        key = arr[i]
+        j = i - 1
+        steps.append(
+            _make_step(
+                "Insertion Sort",
+                arr,
+                [i],
+                list(range(i)),
+                f"Preparing to insert value {key} from index {i} into the sorted left portion.",
+                step,
+            )
+        )
+        step += 1
+        while j >= 0 and arr[j] > key:
+            arr[j + 1] = arr[j]
+            steps.append(
+                _make_step(
+                    "Insertion Sort",
+                    arr,
+                    [j, j + 1],
+                    list(range(i + 1)),
+                    f"Shifted {arr[j]} right to make room for {key}.",
+                    step,
+                )
+            )
+            step += 1
+            j -= 1
+        arr[j + 1] = key
+        steps.append(
+            _make_step(
+                "Insertion Sort",
+                arr,
+                [j + 1],
+                list(range(i + 1)),
+                f"Placed {key} at index {j + 1}. Left portion remains sorted.",
+                step,
+            )
+        )
+        step += 1
+    steps.append(_complete_step("Insertion Sort", arr, step))
+    return steps
 
-    def step(self) -> Dict[str, Any]:
-        if self.completed:
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Selection Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": "Sorting complete.",
-            }
 
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Selection Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Array of length 0 or 1 is already sorted.",
-            }
+def generate_merge_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    steps: List[Dict[str, Any]] = []
+    step = 1
 
-        if self.i >= n - 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Selection Sort",
-                "step": self.i,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        # Initialize min_idx if starting new pass
-        if self.j == self.i:
-            self.min_idx = self.i
-
-        # Find minimum element in unsorted portion
-        if self.j < n:
-            if self.array[self.j] < self.array[self.min_idx]:
-                self.min_idx = self.j
-                explanation = f"Found smaller element at index {self.j} ({self.array[self.j]}). Updating minimum index to {self.j}."
+    def merge(l: int, m: int, r: int) -> None:
+        nonlocal step
+        left = arr[l : m + 1]
+        right = arr[m + 1 : r + 1]
+        i = j = 0
+        k = l
+        while i < len(left) and j < len(right):
+            if left[i] <= right[j]:
+                arr[k] = left[i]
+                explanation = (
+                    f"Placed {left[i]} from left half into position {k}."
+                )
+                i += 1
             else:
-                explanation = f"Comparing index {self.j} ({self.array[self.j]}) with current minimum at index {self.min_idx} ({self.array[self.min_idx]}). No update needed."
+                arr[k] = right[j]
+                explanation = (
+                    f"Placed {right[j]} from right half into position {k}."
+                )
+                j += 1
+            steps.append(
+                _make_step(
+                    "Merge Sort",
+                    arr,
+                    list(range(l, r + 1)),
+                    list(range(l, k + 1)),
+                    explanation,
+                    step,
+                )
+            )
+            step += 1
+            k += 1
+        while i < len(left):
+            arr[k] = left[i]
+            steps.append(
+                _make_step(
+                    "Merge Sort",
+                    arr,
+                    list(range(l, r + 1)),
+                    list(range(l, k + 1)),
+                    f"Copy remaining left value {left[i]} to index {k}.",
+                    step,
+                )
+            )
+            step += 1
+            i += 1
+            k += 1
+        while j < len(right):
+            arr[k] = right[j]
+            steps.append(
+                _make_step(
+                    "Merge Sort",
+                    arr,
+                    list(range(l, r + 1)),
+                    list(range(l, k + 1)),
+                    f"Copy remaining right value {right[j]} to index {k}.",
+                    step,
+                )
+            )
+            step += 1
+            j += 1
+            k += 1
 
-            self.j += 1
+    def merge_sort(l: int, r: int) -> None:
+        if l >= r:
+            return
+        m = (l + r) // 2
+        merge_sort(l, m)
+        merge_sort(m + 1, r)
+        merge(l, m, r)
 
-            if self.j < n:
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Selection Sort",
-                    "step": self.i + 1,
-                    "data": {
-                        "array": list(self.array),
-                        "highlighted_indices": [self.i, self.j - 1, self.min_idx],
-                        "sorted_indices": list(range(self.i)),
-                    },
-                    "explanation": explanation,
-                }
-
-        # Swap minimum with first unsorted element
-        if self.min_idx != self.i:
-            old_value = self.array[self.i]
-            self.array[self.i], self.array[self.min_idx] = self.array[self.min_idx], self.array[self.i]
-            explanation = f"Swapping minimum element at index {self.min_idx} (value {old_value}) with element at index {self.i}."
-        else:
-            explanation = f"Minimum element is already at index {self.i}. No swap needed."
-
-        self.i += 1
-        self.j = self.i
-
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Selection Sort",
-            "step": self.i,
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": [self.i - 1],
-                "sorted_indices": list(range(self.i)),
-            },
-            "explanation": explanation,
-        }
-
-
-@dataclass
-class InsertionSortState:
-    array: List[int]
-    i: int = 1  # outer loop index (starting from 1)
-    j: int = 0  # inner loop index
-    key: Optional[int] = None  # current element being inserted
-    completed: bool = False
-
-    def step(self) -> Dict[str, Any]:
-        if self.completed:
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Insertion Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Insertion Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Array of length 0 or 1 is already sorted.",
-            }
-
-        if self.i >= n:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Insertion Sort",
-                "step": self.i,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        # Start new element insertion
-        if self.key is None and self.i < n:
-            self.key = self.array[self.i]
-            self.j = self.i - 1
-            if self.j < 0 or self.array[self.j] <= self.key:
-                # Element is already in correct position
-                explanation = f"Element at index {self.i} (value {self.key}) is already in correct position."
-                self.i += 1
-                self.key = None
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Insertion Sort",
-                    "step": self.i,
-                    "data": {
-                        "array": list(self.array),
-                        "highlighted_indices": [self.i - 1],
-                        "sorted_indices": list(range(self.i)),
-                    },
-                    "explanation": explanation,
-                }
-            explanation = f"Inserting element at index {self.i} (value {self.key}) into sorted portion."
-
-        # Shift elements to the right
-        if self.j >= 0 and self.array[self.j] > self.key:
-            self.array[self.j + 1] = self.array[self.j]
-            explanation = f"Shifting element at index {self.j} ({self.array[self.j + 1]}) to the right."
-            self.j -= 1
-
-            if self.j >= 0 and self.array[self.j] > self.key:
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Insertion Sort",
-                    "step": self.i + 1,
-                    "data": {
-                        "array": list(self.array),
-                        "highlighted_indices": [self.i, self.j + 1],
-                        "sorted_indices": list(range(self.i)),
-                    },
-                    "explanation": explanation,
-                }
-
-        # Insert key at correct position
-        self.array[self.j + 1] = self.key
-        explanation = f"Inserted element {self.key} at index {self.j + 1}."
-
-        self.i += 1
-        self.key = None
-        self.j = 0
-
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Insertion Sort",
-            "step": self.i,
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": [self.i - 1],
-                "sorted_indices": list(range(self.i)),
-            },
-            "explanation": explanation,
-        }
+    merge_sort(0, len(arr) - 1)
+    steps.append(_complete_step("Merge Sort", arr, step))
+    return steps
 
 
-@dataclass
-class QuickSortState:
-    array: List[int]
-    stack: List[Tuple[int, int]] = None  # Stack of (low, high) pairs
-    low: int = 0
-    high: int = 0
-    pivot_idx: int = 0
-    i: int = 0  # partition index
-    j: int = 0  # current index in partition
-    pivot: int = 0
-    partitioning: bool = False
-    completed: bool = False
+def generate_quick_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    steps: List[Dict[str, Any]] = []
+    n = len(arr)
+    step = 1
+    sorted_positions: set[int] = set()
 
-    def __post_init__(self):
-        if self.stack is None:
-            self.stack = [(0, len(self.array) - 1)] if len(self.array) > 1 else []
-            if self.stack:
-                self.low, self.high = self.stack[0]
-
-    def step(self) -> Dict[str, Any]:
-        if self.completed:
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Quick Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Quick Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Array of length 0 or 1 is already sorted.",
-            }
-
-        if not self.stack:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Quick Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        # Start partitioning
-        if not self.partitioning:
-            self.low, self.high = self.stack.pop(0)
-            if self.low >= self.high:
-                if self.stack:
-                    return self.step()
-                self.completed = True
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Quick Sort",
-                    "step": -1,
-                    "data": {
-                        "array": self.array,
-                        "highlighted_indices": [],
-                        "sorted_indices": list(range(n)),
-                    },
-                    "explanation": "Sorting complete.",
-                }
-
-            self.pivot = self.array[self.high]
-            self.pivot_idx = self.high
-            self.i = self.low - 1
-            self.j = self.low
-            self.partitioning = True
-            explanation = f"Starting partition: pivot = {self.pivot} at index {self.high}, partitioning from {self.low} to {self.high}."
-
-        # Partitioning process
-        if self.j < self.high:
-            if self.array[self.j] <= self.pivot:
-                self.i += 1
-                self.array[self.i], self.array[self.j] = self.array[self.j], self.array[self.i]
-                explanation = f"Element at index {self.j} ({self.array[self.i]}) <= pivot ({self.pivot}). Swapping with index {self.i}."
+    stack: List[tuple[int, int]] = [(0, n - 1)]
+    while stack:
+        low, high = stack.pop()
+        if low >= high:
+            sorted_positions.update(range(low, high + 1))
+            continue
+        pivot = arr[high]
+        steps.append(
+            _make_step(
+                "Quick Sort",
+                arr,
+                list(range(low, high + 1)),
+                sorted(sorted_positions),
+                f"Partitioning range [{low}, {high}] using pivot {pivot} (index {high}).",
+                step,
+            )
+        )
+        step += 1
+        i = low - 1
+        for j in range(low, high):
+            explanation = f"Compare index {j} ({arr[j]}) to pivot {pivot}."
+            if arr[j] <= pivot:
+                i += 1
+                arr[i], arr[j] = arr[j], arr[i]
+                explanation += f" Move value {arr[i]} to the left partition."
             else:
-                explanation = f"Element at index {self.j} ({self.array[self.j]}) > pivot ({self.pivot}). No swap."
+                explanation += " Keep it in the right partition."
+            steps.append(
+                _make_step(
+                    "Quick Sort",
+                    arr,
+                    [j, high],
+                    sorted(sorted_positions),
+                    explanation,
+                    step,
+                )
+            )
+            step += 1
+        arr[i + 1], arr[high] = arr[high], arr[i + 1]
+        pivot_index = i + 1
+        sorted_positions.add(pivot_index)
+        steps.append(
+            _make_step(
+                "Quick Sort",
+                arr,
+                [pivot_index],
+                sorted(sorted_positions),
+                f"Placed pivot {arr[pivot_index]} at index {pivot_index}. Left partition < pivot, right >= pivot.",
+                step,
+            )
+        )
+        step += 1
+        stack.append((low, pivot_index - 1))
+        stack.append((pivot_index + 1, high))
 
-            self.j += 1
-
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Quick Sort",
-                "step": self.low + 1,
-                "data": {
-                    "array": list(self.array),
-                    "highlighted_indices": [self.j - 1, self.i, self.pivot_idx],
-                    "sorted_indices": [],
-                },
-                "explanation": explanation,
-            }
-
-        # Place pivot in correct position
-        self.array[self.i + 1], self.array[self.high] = self.array[self.high], self.array[self.i + 1]
-        pivot_pos = self.i + 1
-
-        explanation = f"Partition complete. Pivot {self.pivot} placed at index {pivot_pos}."
-
-        # Add sub-arrays to stack
-        if self.low < pivot_pos - 1:
-            self.stack.insert(0, (self.low, pivot_pos - 1))
-        if pivot_pos + 1 < self.high:
-            self.stack.insert(0, (pivot_pos + 1, self.high))
-
-        self.partitioning = False
-
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Quick Sort",
-            "step": pivot_pos + 1,
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": [pivot_pos],
-                "sorted_indices": [pivot_pos],
-            },
-            "explanation": explanation,
-        }
+    steps.append(_complete_step("Quick Sort", arr, step))
+    return steps
 
 
-@dataclass
-class MergeSortState:
-    array: List[int]
-    merge_queue: List[Tuple[int, int]] = None  # Queue of (low, high) pairs to merge
-    current_merge: Optional[Tuple[int, int, int]] = None  # (low, mid, high)
-    merge_i: int = 0
-    merge_j: int = 0
-    merge_k: int = 0
-    left_arr: List[int] = None
-    right_arr: List[int] = None
-    completed: bool = False
-    step_count: int = 0
+def generate_heap_sort_steps(values: List[int]) -> List[Dict[str, Any]]:
+    arr = list(values)
+    n = len(arr)
+    steps: List[Dict[str, Any]] = []
+    step = 1
+    sorted_positions: set[int] = set()
 
-    def __post_init__(self):
-        if self.merge_queue is None:
-            # Build merge queue (bottom-up approach for simplicity)
-            n = len(self.array)
-            size = 1
-            self.merge_queue = []
-            while size < n:
-                for low in range(0, n, 2 * size):
-                    mid = min(low + size - 1, n - 1)
-                    high = min(low + 2 * size - 1, n - 1)
-                    if mid < high:
-                        self.merge_queue.append((low, mid, high))
-                size *= 2
+    def record(explanation: str, highlights: List[int]) -> None:
+        nonlocal step
+        steps.append(
+            _make_step(
+                "Heap Sort",
+                arr,
+                highlights,
+                sorted(sorted_positions),
+                explanation,
+                step,
+            )
+        )
+        step += 1
 
-    def step(self) -> Dict[str, Any]:
-        if self.completed:
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": "Sorting complete.",
-            }
+    def heapify(heap_size: int, root: int) -> None:
+        largest = root
+        left = 2 * root + 1
+        right = 2 * root + 2
 
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Array of length 0 or 1 is already sorted.",
-            }
-
-        if not self.merge_queue and self.current_merge is None:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": self.step_count,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        # Start new merge
-        if self.current_merge is None:
-            if not self.merge_queue:
-                self.completed = True
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Merge Sort",
-                    "step": self.step_count,
-                    "data": {
-                        "array": self.array,
-                        "highlighted_indices": [],
-                        "sorted_indices": list(range(n)),
-                    },
-                    "explanation": "Sorting complete.",
-                }
-
-            low, mid, high = self.merge_queue.pop(0)
-            self.current_merge = (low, mid, high)
-            self.left_arr = self.array[low:mid + 1].copy()
-            self.right_arr = self.array[mid + 1:high + 1].copy()
-            self.merge_i = 0
-            self.merge_j = 0
-            self.merge_k = low
-            self.step_count += 1
-            explanation = f"Merging sub-arrays from index {low} to {mid} and {mid + 1} to {high}."
-
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": self.step_count,
-                "data": {
-                    "array": list(self.array),
-                    "highlighted_indices": list(range(low, high + 1)),
-                    "sorted_indices": [],
-                },
-                "explanation": explanation,
-            }
-
-        # Continue merging
-        low, mid, high = self.current_merge
-
-        if self.merge_i < len(self.left_arr) and self.merge_j < len(self.right_arr):
-            if self.left_arr[self.merge_i] <= self.right_arr[self.merge_j]:
-                self.array[self.merge_k] = self.left_arr[self.merge_i]
-                explanation = f"Taking {self.left_arr[self.merge_i]} from left sub-array (index {low + self.merge_i})."
-                self.merge_i += 1
+        if left < heap_size:
+            explanation = (
+                f"Compare left child index {left} ({arr[left]}) with root index {root} ({arr[largest]})."
+            )
+            if arr[left] > arr[largest]:
+                largest = left
+                explanation += " Left child is larger."
             else:
-                self.array[self.merge_k] = self.right_arr[self.merge_j]
-                explanation = f"Taking {self.right_arr[self.merge_j]} from right sub-array (index {mid + 1 + self.merge_j})."
-                self.merge_j += 1
-            self.merge_k += 1
-            self.step_count += 1
+                explanation += " Root stays larger."
+            record(explanation, [root, left])
 
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": self.step_count,
-                "data": {
-                    "array": list(self.array),
-                    "highlighted_indices": [self.merge_k - 1, low + self.merge_i - 1 if self.merge_i > 0 else low, mid + 1 + self.merge_j - 1 if self.merge_j > 0 else mid + 1],
-                    "sorted_indices": list(range(low, self.merge_k)),
-                },
-                "explanation": explanation,
-            }
+        if right < heap_size:
+            explanation = (
+                f"Compare right child index {right} ({arr[right]}) with current largest index {largest} ({arr[largest]})."
+            )
+            if arr[right] > arr[largest]:
+                largest = right
+                explanation += " Right child becomes new largest."
+            else:
+                explanation += " Largest remains unchanged."
+            record(explanation, [largest, right])
 
-        # Copy remaining elements from left
-        if self.merge_i < len(self.left_arr):
-            self.array[self.merge_k] = self.left_arr[self.merge_i]
-            explanation = f"Copying remaining element {self.left_arr[self.merge_i]} from left sub-array."
-            self.merge_i += 1
-            self.merge_k += 1
-            self.step_count += 1
+        if largest != root:
+            arr[root], arr[largest] = arr[largest], arr[root]
+            record(
+                f"Swapped index {root} with child index {largest} to maintain heap property.",
+                [root, largest],
+            )
+            heapify(heap_size, largest)
 
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": self.step_count,
-                "data": {
-                    "array": list(self.array),
-                    "highlighted_indices": [self.merge_k - 1],
-                    "sorted_indices": list(range(low, self.merge_k)),
-                },
-                "explanation": explanation,
-            }
+    # Build max heap
+    for idx in range(n // 2 - 1, -1, -1):
+        heapify(n, idx)
 
-        # Copy remaining elements from right
-        if self.merge_j < len(self.right_arr):
-            self.array[self.merge_k] = self.right_arr[self.merge_j]
-            explanation = f"Copying remaining element {self.right_arr[self.merge_j]} from right sub-array."
-            self.merge_j += 1
-            self.merge_k += 1
-            self.step_count += 1
+    # Extract elements
+    for end in range(n - 1, 0, -1):
+        arr[0], arr[end] = arr[end], arr[0]
+        sorted_positions.add(end)
+        record(
+            f"Move current max {arr[end]} to index {end}; heap size reduces to {end}.",
+            [0, end],
+        )
+        heapify(end, 0)
 
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Merge Sort",
-                "step": self.step_count,
-                "data": {
-                    "array": list(self.array),
-                    "highlighted_indices": [self.merge_k - 1],
-                    "sorted_indices": list(range(low, self.merge_k)),
-                },
-                "explanation": explanation,
-            }
+    sorted_positions.update(range(n))
+    steps.append(_complete_step("Heap Sort", arr, step))
+    return steps
 
-        # Merge complete
-        explanation = f"Merge complete for range {low} to {high}."
-        self.current_merge = None
-        self.step_count += 1
 
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Merge Sort",
-            "step": self.step_count,
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": list(range(low, high + 1)),
-                "sorted_indices": list(range(low, high + 1)),
-            },
-            "explanation": explanation,
-        }
+ALGORITHM_BUILDERS: Dict[str, Callable[[List[int]], List[Dict[str, Any]]]] = {
+    "Bubble Sort": generate_bubble_sort_steps,
+    "Selection Sort": generate_selection_sort_steps,
+    "Insertion Sort": generate_insertion_sort_steps,
+    "Merge Sort": generate_merge_sort_steps,
+    "Quick Sort": generate_quick_sort_steps,
+    "Heap Sort": generate_heap_sort_steps,
+}
+
+ALGORITHM_ALIASES: Dict[str, str] = dict(SORTING_SELECTION_KEYWORDS)
+
+ALGORITHM_EXPLANATIONS: Dict[str, str] = {
+    "Bubble Sort": (
+        "THEORY:\n"
+        "Bubble Sort works by repeatedly stepping through the list, comparing adjacent elements and swapping them if they are in the wrong order. "
+        "The algorithm gets its name because smaller elements 'bubble' to the top of the list with each pass. "
+        "In each iteration, the largest unsorted element moves to its correct position at the end of the array.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Start from the first element and compare it with the next element\n"
+        "2. If the first element is greater than the second, swap them\n"
+        "3. Move to the next pair and repeat\n"
+        "4. After one complete pass, the largest element is in its final position\n"
+        "5. Repeat the process for the remaining unsorted portion\n"
+        "6. Continue until no swaps are needed in a complete pass\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n), Average O(n²), Worst O(n²)\n"
+        "• Space Complexity: O(1) - in-place sorting\n"
+        "• Stability: Stable (maintains relative order of equal elements)\n"
+        "• Adaptive: Yes (can detect if array is already sorted)\n"
+        "• In-place: Yes\n"
+        "• Use Case: Educational purposes, small datasets, or when simplicity is preferred"
+    ),
+    "Selection Sort": (
+        "THEORY:\n"
+        "Selection Sort divides the input list into two parts: a sorted sublist at the beginning and an unsorted sublist at the end. "
+        "The algorithm repeatedly finds the minimum element from the unsorted portion and places it at the end of the sorted portion.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Find the minimum element in the unsorted portion of the array\n"
+        "2. Swap it with the first element of the unsorted portion\n"
+        "3. The sorted portion grows by one element\n"
+        "4. Repeat steps 1-3 for the remaining unsorted portion\n"
+        "5. Continue until the entire array is sorted\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n²), Average O(n²), Worst O(n²)\n"
+        "• Space Complexity: O(1) - in-place sorting\n"
+        "• Stability: Not stable (may change relative order of equal elements)\n"
+        "• Adaptive: No (always performs the same number of comparisons)\n"
+        "• In-place: Yes\n"
+        "• Use Case: Small datasets, when memory writes are expensive, or when simplicity is needed"
+    ),
+    "Insertion Sort": (
+        "THEORY:\n"
+        "Insertion Sort builds the sorted array one element at a time, similar to how you might sort playing cards in your hands. "
+        "It takes each element from the unsorted portion and inserts it into its correct position in the sorted portion.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Start with the second element (index 1) as the key\n"
+        "2. Compare the key with elements in the sorted portion (to its left)\n"
+        "3. Shift all elements greater than the key one position to the right\n"
+        "4. Insert the key into its correct position\n"
+        "5. Move to the next element and repeat\n"
+        "6. Continue until all elements are processed\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n), Average O(n²), Worst O(n²)\n"
+        "• Space Complexity: O(1) - in-place sorting\n"
+        "• Stability: Stable (maintains relative order of equal elements)\n"
+        "• Adaptive: Yes (efficient for nearly sorted arrays)\n"
+        "• In-place: Yes\n"
+        "• Use Case: Small datasets, nearly sorted arrays, or as part of hybrid sorting algorithms"
+    ),
+    "Merge Sort": (
+        "THEORY:\n"
+        "Merge Sort is a divide-and-conquer algorithm that divides the array into two halves, sorts each half recursively, "
+        "and then merges the two sorted halves back together. It's one of the most efficient sorting algorithms.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Divide the array into two halves\n"
+        "2. Recursively sort the left half\n"
+        "3. Recursively sort the right half\n"
+        "4. Merge the two sorted halves:\n"
+        "   - Compare elements from both halves\n"
+        "   - Take the smaller element and place it in the result\n"
+        "   - Continue until one half is exhausted\n"
+        "   - Copy remaining elements from the other half\n"
+        "5. The merged result is the sorted array\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n log n), Average O(n log n), Worst O(n log n)\n"
+        "• Space Complexity: O(n) - requires additional memory for merging\n"
+        "• Stability: Stable (maintains relative order of equal elements)\n"
+        "• Adaptive: No (always performs the same operations regardless of input)\n"
+        "• In-place: No (requires O(n) extra space)\n"
+        "• Use Case: Large datasets, when stability is required, external sorting, or when consistent performance is needed"
+    ),
+    "Quick Sort": (
+        "THEORY:\n"
+        "Quick Sort is a divide-and-conquer algorithm that picks a 'pivot' element and partitions the array around the pivot. "
+        "Elements smaller than the pivot go to the left, and elements greater go to the right. "
+        "The process is repeated recursively for the sub-arrays.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Choose a pivot element (commonly the last element)\n"
+        "2. Partition the array:\n"
+        "   - Rearrange elements so all elements < pivot are on the left\n"
+        "   - All elements > pivot are on the right\n"
+        "   - Place the pivot in its correct sorted position\n"
+        "3. Recursively apply Quick Sort to the left sub-array\n"
+        "4. Recursively apply Quick Sort to the right sub-array\n"
+        "5. Base case: arrays of size 0 or 1 are already sorted\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n log n), Average O(n log n), Worst O(n²)\n"
+        "• Space Complexity: O(log n) average, O(n) worst case (due to recursion stack)\n"
+        "• Stability: Not stable (may change relative order of equal elements)\n"
+        "• Adaptive: Yes (efficient for many real-world data distributions)\n"
+        "• In-place: Yes (with proper implementation)\n"
+        "• Use Case: General-purpose sorting, large datasets, when average-case performance matters more than worst-case"
+    ),
+    "Heap Sort": (
+        "THEORY:\n"
+        "Heap Sort uses a binary heap data structure to sort elements. It first builds a max heap from the input array, "
+        "then repeatedly extracts the maximum element from the heap and places it at the end of the sorted portion.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Build a max heap from the input array:\n"
+        "   - Start from the last non-leaf node\n"
+        "   - Heapify each node to maintain heap property\n"
+        "2. Extract elements from the heap:\n"
+        "   - Swap the root (max element) with the last element\n"
+        "   - Reduce heap size by one\n"
+        "   - Heapify the root to restore heap property\n"
+        "3. Repeat step 2 until the heap is empty\n"
+        "4. The array is now sorted in ascending order\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Best O(n log n), Average O(n log n), Worst O(n log n)\n"
+        "• Space Complexity: O(1) - in-place sorting (if heapify is done in-place)\n"
+        "• Stability: Not stable (may change relative order of equal elements)\n"
+        "• Adaptive: No (always performs the same operations)\n"
+        "• In-place: Yes\n"
+        "• Use Case: When guaranteed O(n log n) performance is needed, embedded systems, or when worst-case O(n²) of Quick Sort is unacceptable"
+    ),
+}
 
 
 @dataclass
-class HeapSortState:
-    array: List[int]
-    heap_size: int = 0
-    building_heap: bool = True
-    i: int = 0  # current index for heap building/extraction
-    extracting: bool = False
-    completed: bool = False
-
-    def __post_init__(self):
-        self.heap_size = len(self.array)
-        self.i = (self.heap_size // 2) - 1  # Start from last non-leaf node
-
-    def _heapify(self, arr: List[int], n: int, i: int) -> None:
-        """Helper to maintain heap property."""
-        largest = i
-        left = 2 * i + 1
-        right = 2 * i + 2
-
-        if left < n and arr[left] > arr[largest]:
-            largest = left
-
-        if right < n and arr[right] > arr[largest]:
-            largest = right
-
-        if largest != i:
-            arr[i], arr[largest] = arr[largest], arr[i]
-            self._heapify(arr, n, largest)
+class AlgorithmRunner:
+    algorithm: str
+    steps: List[Dict[str, Any]]
+    index: int = 0
 
     def step(self) -> Dict[str, Any]:
-        if self.completed:
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Heap Sort",
-                "step": -1,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(len(self.array))),
-                },
-                "explanation": "Sorting complete.",
-            }
-
-        n = len(self.array)
-        if n <= 1:
-            self.completed = True
-            return {
-                "status": "success",
-                "type": "visualization_step",
-                "algorithm": "Heap Sort",
-                "step": 0,
-                "data": {
-                    "array": self.array,
-                    "highlighted_indices": [],
-                    "sorted_indices": list(range(n)),
-                },
-                "explanation": "Array of length 0 or 1 is already sorted.",
-            }
-
-        # Build max heap
-        if self.building_heap:
-            if self.i >= 0:
-                left = 2 * self.i + 1
-                right = 2 * self.i + 2
-                largest = self.i
-
-                if left < self.heap_size and self.array[left] > self.array[largest]:
-                    largest = left
-                if right < self.heap_size and self.array[right] > self.array[largest]:
-                    largest = right
-
-                if largest != self.i:
-                    self.array[self.i], self.array[largest] = self.array[largest], self.array[self.i]
-                    explanation = f"Heapifying node at index {self.i}. Swapping with child at index {largest}."
-                    self._heapify(self.array, self.heap_size, largest)
-                else:
-                    explanation = f"Node at index {self.i} already satisfies heap property."
-
-                self.i -= 1
-
-                if self.i >= 0:
-                    return {
-                        "status": "success",
-                        "type": "visualization_step",
-                        "algorithm": "Heap Sort",
-                        "step": self.i + 2,
-                        "data": {
-                            "array": list(self.array),
-                            "highlighted_indices": [self.i + 1, 2 * (self.i + 1) + 1, 2 * (self.i + 1) + 2],
-                            "sorted_indices": [],
-                        },
-                        "explanation": explanation,
-                    }
-
-            # Heap built, start extraction
-            self.building_heap = False
-            self.extracting = True
-            self.i = self.heap_size - 1
-            explanation = "Max heap built. Starting to extract elements."
-
-        # Extract elements from heap
-        if self.extracting and self.i > 0:
-            # Swap root with last element
-            self.array[0], self.array[self.i] = self.array[self.i], self.array[0]
-            explanation = f"Swapping root (max element) with element at index {self.i}. Element at index {self.i} is now in sorted position."
-
-            self.heap_size -= 1
-            self._heapify(self.array, self.heap_size, 0)
-
-            self.i -= 1
-
-            if self.i > 0:
-                return {
-                    "status": "success",
-                    "type": "visualization_step",
-                    "algorithm": "Heap Sort",
-                    "step": len(self.array) - self.i,
-                    "data": {
-                        "array": list(self.array),
-                        "highlighted_indices": [0, self.i + 1],
-                        "sorted_indices": list(range(self.i + 1, len(self.array))),
-                    },
-                    "explanation": explanation,
-                }
-
-        self.completed = True
-        return {
-            "status": "success",
-            "type": "visualization_step",
-            "algorithm": "Heap Sort",
-            "step": len(self.array),
-            "data": {
-                "array": list(self.array),
-                "highlighted_indices": [],
-                "sorted_indices": list(range(len(self.array))),
-            },
-            "explanation": "Sorting complete.",
-        }
+        if not self.steps:
+            return _make_step(
+                self.algorithm,
+                [],
+                [],
+                [],
+                "No steps available.",
+                0,
+            )
+        result = self.steps[self.index]
+        if self.index < len(self.steps) - 1:
+            self.index += 1
+        return result
 
 
+@dataclass
 class AlgorithmSession:
-    def __init__(self) -> None:
-        self.algorithm: Optional[str] = None
-        self.state: Optional[Any] = None  # Can be any sorting algorithm state
-        self.menu_state: Optional[str] = None  # 'sorting', 'pathfinding', 'structures'
-        self.waiting_for_array: bool = False  # True when waiting for array input
-        self.selected_algorithm: Optional[str] = None  # Store selected algorithm name
+    algorithm: Optional[str] = None
+    state: Optional[AlgorithmRunner] = None
+    stage: str = "idle"
+    pending_algorithm: Optional[str] = None
 
     def reset(self) -> None:
         self.algorithm = None
         self.state = None
-        self.menu_state = None
-        self.waiting_for_array = False
-        self.selected_algorithm = None
+        self.stage = "idle"
+        self.pending_algorithm = None
 
 
 class AlgorithmSessionManager:
-    def _parse_with_antlr(self, command: str) -> Optional[Dict[str, Any]]:
-        """Parse command using ANTLR grammar. Returns command type and extracted data."""
-        try:
-            input_stream = InputStream(command)
-            lexer = AlgoDSLLexer(input_stream)
-            token_stream = CommonTokenStream(lexer)
-            parser = AlgoDSLParser(token_stream)
-            
-            # Parse the command
-            tree = parser.command()
-            
-            # Check for parse errors
-            if parser.getNumberOfSyntaxErrors() > 0:
-                return None
-            
-            if tree.getChildCount() == 0:
-                return None
-            
-            child = tree.getChild(0)
-            
-            # Menu command
-            if isinstance(child, AlgoDSLParser.MenuCommandContext):
-                return {"type": "menu"}
-            
-            # Next command
-            if isinstance(child, AlgoDSLParser.NextCommandContext):
-                return {"type": "next"}
-            
-            # Explain command
-            if isinstance(child, AlgoDSLParser.ExplainCommandContext):
-                return {"type": "explain"}
-            
-            # Reset command
-            if isinstance(child, AlgoDSLParser.ResetCommandContext):
-                return {"type": "reset"}
-            
-            # Menu selection - check for specific alternatives
-            if isinstance(child, AlgoDSLParser.MenuSelectionContext):
-                # Check specific alternative types (these inherit from MenuSelectionContext)
-                if isinstance(child, AlgoDSLParser.MenuSortingContext):
-                    return {"type": "menu_selection", "menu": "sort"}
-                elif isinstance(child, AlgoDSLParser.MenuPathfindingContext):
-                    return {"type": "menu_selection", "menu": "path"}
-                elif isinstance(child, AlgoDSLParser.MenuDataStructuresContext):
-                    return {"type": "menu_selection", "menu": "struct"}
-                else:
-                    # Fallback: check token type
-                    first_token = child.getStart()
-                    if first_token.type == AlgoDSLParser.SORTING_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_ONE:
-                        return {"type": "menu_selection", "menu": "sort"}
-                    elif first_token.type == AlgoDSLParser.PATHFINDING_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_TWO:
-                        return {"type": "menu_selection", "menu": "path"}
-                    elif first_token.type == AlgoDSLParser.DATA_STRUCTURE_KEYWORDS or first_token.type == AlgoDSLParser.NUMBER_THREE:
-                        return {"type": "menu_selection", "menu": "struct"}
-            
-            # Sorting algorithm selection
-            if isinstance(child, AlgoDSLParser.SortingAlgorithmSelectionContext):
-                first_token = child.getStart()
-                token_type = first_token.type
-                # Map token types to algorithm numbers
-                algo_map = {
-                    AlgoDSLParser.NUMBER_ONE: "1",
-                    AlgoDSLParser.NUMBER_TWO: "2",
-                    AlgoDSLParser.NUMBER_THREE: "3",
-                    AlgoDSLParser.NUMBER_FOUR: "4",
-                    AlgoDSLParser.NUMBER_FIVE: "5",
-                    AlgoDSLParser.NUMBER_SIX: "6",
-                    AlgoDSLParser.BUBBLE_KEYWORDS: "1",
-                    AlgoDSLParser.MERGE_KEYWORDS: "2",
-                    AlgoDSLParser.SELECTION_KEYWORDS: "3",
-                    AlgoDSLParser.INSERTION_KEYWORDS: "4",
-                    AlgoDSLParser.QUICK_KEYWORDS: "5",
-                    AlgoDSLParser.HEAP_KEYWORDS: "6",
-                }
-                if token_type in algo_map:
-                    return {"type": "sorting_algorithm", "selection": algo_map[token_type]}
-            
-            # Array input
-            if isinstance(child, AlgoDSLParser.ArrayInputContext):
-                numbers = []
-                for i in range(child.getChildCount()):
-                    node = child.getChild(i)
-                    if hasattr(node, 'getText'):
-                        text = node.getText()
-                        try:
-                            numbers.append(int(text))
-                        except ValueError:
-                            pass
-                return {"type": "array_input", "array": numbers}
-            
-            # Visualize command (legacy)
-            if isinstance(child, AlgoDSLParser.VisualizeCommandContext):
-                array_literal = child.arrayLiteral()
-                if array_literal:
-                    array_input_ctx = array_literal.arrayInput()
-                    if array_input_ctx:
-                        numbers = []
-                        for i in range(array_input_ctx.getChildCount()):
-                            node = array_input_ctx.getChild(i)
-                            if hasattr(node, 'getText'):
-                                text = node.getText()
-                                try:
-                                    numbers.append(int(text))
-                                except ValueError:
-                                    pass
-                        return {"type": "visualize", "algorithm": "bubble sort", "array": numbers}
-            
-            return None
-        except Exception as e:
-            # If ANTLR parsing fails, return None
-            return None
+    VISUALIZE_RE = re.compile(
+        r"^\s*visualize\s+(?P<algo>[a-zA-Z ]+)\s+on\s*\[(?P<array>[^\]]*)\]\s*$",
+        re.IGNORECASE,
+    )
 
-    # Available sorting algorithms
-    SORTING_ALGORITHMS = [
-        ("1", "Bubble Sort", "bubble"),
-        ("2", "Merge Sort", "merge"),
-        ("3", "Selection Sort", "selection"),
-        ("4", "Insertion Sort", "insertion"),
-        ("5", "Quick Sort", "quick"),
-        ("6", "Heap Sort", "heap")
-    ]
-
-    @staticmethod
-    def _get_algorithm_principle(algorithm_name: str) -> str:
-        """Return the principle/overview explanation for an algorithm."""
-        principles = {
-            "Bubble Sort": (
-                "Bubble Sort is a simple comparison-based sorting algorithm. "
-                "It repeatedly steps through the list, compares adjacent elements, and swaps them if they are in the wrong order. "
-                "The pass through the list is repeated until no swaps are needed, which means the list is sorted. "
-                "The algorithm gets its name because smaller elements 'bubble' to the top of the list. "
-                "Time Complexity: O(n²) worst/average case, O(n) best case (when already sorted). "
-                "Space Complexity: O(1) - in-place sorting."
-            ),
-            "Selection Sort": (
-                "Selection Sort divides the input list into two parts: a sorted sublist and an unsorted sublist. "
-                "The algorithm repeatedly finds the minimum element from the unsorted part and places it at the beginning of the sorted part. "
-                "This process continues until the entire list is sorted. "
-                "Time Complexity: O(n²) for all cases. "
-                "Space Complexity: O(1) - in-place sorting."
-            ),
-            "Insertion Sort": (
-                "Insertion Sort builds the sorted array one element at a time. "
-                "It takes each element from the input and inserts it into the correct position in the already sorted portion. "
-                "The algorithm is similar to how you might sort playing cards in your hands. "
-                "Time Complexity: O(n²) worst/average case, O(n) best case (when already sorted). "
-                "Space Complexity: O(1) - in-place sorting."
-            ),
-            "Quick Sort": (
-                "Quick Sort is a divide-and-conquer algorithm. "
-                "It picks a 'pivot' element and partitions the array around the pivot, placing smaller elements before it and larger elements after it. "
-                "The algorithm then recursively sorts the sub-arrays on either side of the pivot. "
-                "Time Complexity: O(n log n) average case, O(n²) worst case (when pivot is always smallest/largest). "
-                "Space Complexity: O(log n) average case due to recursion stack."
-            ),
-            "Merge Sort": (
-                "Merge Sort is a divide-and-conquer algorithm that divides the array into two halves, sorts them separately, and then merges them back together. "
-                "The algorithm recursively splits the array until each sub-array contains a single element (which is already sorted), then merges them in sorted order. "
-                "Time Complexity: O(n log n) for all cases - consistent performance. "
-                "Space Complexity: O(n) - requires additional space for merging."
-            ),
-            "Heap Sort": (
-                "Heap Sort uses a binary heap data structure to sort elements. "
-                "First, it builds a max-heap from the input array, where the largest element is at the root. "
-                "Then it repeatedly extracts the maximum element from the heap and places it at the end of the sorted portion, rebuilding the heap after each extraction. "
-                "Time Complexity: O(n log n) for all cases. "
-                "Space Complexity: O(1) - in-place sorting (if we ignore the recursion stack)."
-            ),
-        }
-        return principles.get(algorithm_name, "Algorithm principle not available.")
+    EXPLAIN_RE = re.compile(r"^\s*explain\s*$", re.IGNORECASE)
+    NEXT_RE = re.compile(r"^\s*next\s*$", re.IGNORECASE)
+    RESET_RE = re.compile(r"^\s*reset\s*$", re.IGNORECASE)
 
     def __init__(self) -> None:
         self.sessions: Dict[str, AlgorithmSession] = {}
@@ -1050,475 +681,243 @@ class AlgorithmSessionManager:
 
     def handle_command(self, session_id: str, command: str) -> Dict[str, Any]:
         session = self._get_or_create(session_id)
+        stripped = command.strip()
+        lowered = stripped.lower()
 
-        # Handle array input if waiting for array (check this first, before ANTLR)
-        if session.waiting_for_array:
-            # Try to parse as array with ANTLR first
-            parsed = self._parse_with_antlr(command)
-            if parsed and parsed.get("type") == "array_input":
-                arr = parsed.get("array", [])
-                if arr:
-                    session.waiting_for_array = False
-                    algorithm = session.selected_algorithm
-                    
-                    if algorithm == "Bubble Sort":
-                        session.algorithm = "Bubble Sort"
-                        session.state = BubbleSortState(array=arr)
-                    elif algorithm == "Selection Sort":
-                        session.algorithm = "Selection Sort"
-                        session.state = SelectionSortState(array=arr)
-                    elif algorithm == "Insertion Sort":
-                        session.algorithm = "Insertion Sort"
-                        session.state = InsertionSortState(array=arr)
-                    elif algorithm == "Quick Sort":
-                        session.algorithm = "Quick Sort"
-                        session.state = QuickSortState(array=arr)
-                    elif algorithm == "Merge Sort":
-                        session.algorithm = "Merge Sort"
-                        session.state = MergeSortState(array=arr)
-                    elif algorithm == "Heap Sort":
-                        session.algorithm = "Heap Sort"
-                        session.state = HeapSortState(array=arr)
-                    else:
-                        return {
-                            "status": "error",
-                            "message": f"Unknown algorithm: {algorithm}"
-                        }
-                    
-                    return session.state.step()
+        if not stripped:
+            raise ValueError(
+                "Unknown command or invalid syntax. Type 'menu' to see available options."
+            )
+
+        if lowered == "menu":
+            session.reset()
+            session.stage = "menu"
+            return self._menu_payload()
+
+        # If in sorting_menu stage, prioritize algorithm selection over menu selection
+        if session.stage == "sorting_menu":
+            selection_algorithm = self._match_sorting_selection(lowered)
+            if not selection_algorithm:
+                # Try to find algorithm keywords within the input
+                for keyword, algo_name in SORTING_SELECTION_KEYWORDS.items():
+                    if keyword in lowered:
+                        selection_algorithm = algo_name
+                        break
             
-            # Fallback: try to parse as array string
-            try:
-                arr = self._parse_array(command)
-                session.waiting_for_array = False
-                algorithm = session.selected_algorithm
-                
-                if algorithm == "Bubble Sort":
-                    session.algorithm = "Bubble Sort"
-                    session.state = BubbleSortState(array=arr)
-                elif algorithm == "Selection Sort":
-                    session.algorithm = "Selection Sort"
-                    session.state = SelectionSortState(array=arr)
-                elif algorithm == "Insertion Sort":
-                    session.algorithm = "Insertion Sort"
-                    session.state = InsertionSortState(array=arr)
-                elif algorithm == "Quick Sort":
-                    session.algorithm = "Quick Sort"
-                    session.state = QuickSortState(array=arr)
-                elif algorithm == "Merge Sort":
-                    session.algorithm = "Merge Sort"
-                    session.state = MergeSortState(array=arr)
-                elif algorithm == "Heap Sort":
-                    session.algorithm = "Heap Sort"
-                    session.state = HeapSortState(array=arr)
-                else:
-                    return {
-                        "status": "error",
-                        "message": f"Unknown algorithm: {algorithm}"
-                    }
-                
-                return session.state.step()
-            except ValueError:
-                return {
-                    "status": "error",
-                    "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
-                }
+            if selection_algorithm:
+                session.pending_algorithm = selection_algorithm
+                session.stage = "await_array"
+                return self._prompt_array_payload(selection_algorithm)
 
-        # Handle sorting algorithm selection if in sorting menu (check before ANTLR)
-        if session.menu_state == "sort":
-            # Try to parse as sorting algorithm selection
-            parsed = self._parse_with_antlr(command)
-            if parsed and parsed.get("type") == "sorting_algorithm":
-                return self._handle_sorting_algorithm_selection(session, parsed["selection"])
-            else:
-                # Also check if it's a number that could be an algorithm
-                cmd_lower = command.strip().lower()
-                if cmd_lower in ["1", "2", "3", "4", "5", "6"]:
-                    return self._handle_sorting_algorithm_selection(session, cmd_lower)
-                # Check for keyword matches
-                for num, name, keyword in self.SORTING_ALGORITHMS:
-                    if keyword in cmd_lower or name.lower() in cmd_lower:
-                        return self._handle_sorting_algorithm_selection(session, num)
-                # Invalid selection, show menu again
-                return self._get_sorting_menu()
-
-        # Try to parse with ANTLR for other commands
-        parsed = self._parse_with_antlr(command)
+        # Check for menu selection keywords within the input (not just exact match)
+        # First check for numbers (only if not in sorting_menu)
+        if lowered in MENU_SELECTION_NUMBERS["sorting"]:
+            session.stage = "sorting_menu"
+            session.pending_algorithm = None
+            return self._sorting_menu_payload()
         
-        if parsed:
-            cmd_type = parsed.get("type")
-            if session.waiting_for_array:
-                if cmd_type == "array_input":
-                    # Use the parsed array from ANTLR
-                    arr = parsed.get("array", [])
-                    if arr:
-                        session.waiting_for_array = False
-                        algorithm = session.selected_algorithm
-                        
-                        if algorithm == "Bubble Sort":
-                            session.algorithm = "Bubble Sort"
-                            session.state = BubbleSortState(array=arr)
-                        elif algorithm == "Selection Sort":
-                            session.algorithm = "Selection Sort"
-                            session.state = SelectionSortState(array=arr)
-                        elif algorithm == "Insertion Sort":
-                            session.algorithm = "Insertion Sort"
-                            session.state = InsertionSortState(array=arr)
-                        elif algorithm == "Quick Sort":
-                            session.algorithm = "Quick Sort"
-                            session.state = QuickSortState(array=arr)
-                        elif algorithm == "Merge Sort":
-                            session.algorithm = "Merge Sort"
-                            session.state = MergeSortState(array=arr)
-                        elif algorithm == "Heap Sort":
-                            session.algorithm = "Heap Sort"
-                            session.state = HeapSortState(array=arr)
-                        else:
-                            return {
-                                "status": "error",
-                                "message": f"Unknown algorithm: {algorithm}"
-                            }
-                        
-                        return session.state.step()
-                    else:
-                        return {
-                            "status": "error",
-                            "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
-                        }
-                else:
-                    # Try to parse as array even if ANTLR didn't recognize it
-                    try:
-                        arr = self._parse_array(command)
-                        session.waiting_for_array = False
-                        algorithm = session.selected_algorithm
-                        
-                        if algorithm == "Bubble Sort":
-                            session.algorithm = "Bubble Sort"
-                            session.state = BubbleSortState(array=arr)
-                        elif algorithm == "Selection Sort":
-                            session.algorithm = "Selection Sort"
-                            session.state = SelectionSortState(array=arr)
-                        elif algorithm == "Insertion Sort":
-                            session.algorithm = "Insertion Sort"
-                            session.state = InsertionSortState(array=arr)
-                        elif algorithm == "Quick Sort":
-                            session.algorithm = "Quick Sort"
-                            session.state = QuickSortState(array=arr)
-                        elif algorithm == "Merge Sort":
-                            session.algorithm = "Merge Sort"
-                            session.state = MergeSortState(array=arr)
-                        elif algorithm == "Heap Sort":
-                            session.algorithm = "Heap Sort"
-                            session.state = HeapSortState(array=arr)
-                        else:
-                            return {
-                                "status": "error",
-                                "message": f"Unknown algorithm: {algorithm}"
-                            }
-                        
-                        return session.state.step()
-                    except ValueError:
-                        return {
-                            "status": "error",
-                            "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
-                        }
-            
-            # Handle sorting algorithm selection if in sorting menu
-            if session.menu_state == "sort":
-                if cmd_type == "sorting_algorithm":
-                    return self._handle_sorting_algorithm_selection(session, parsed["selection"])
-                else:
-                    # Invalid selection, show menu again
-                    return self._get_sorting_menu()
-            
-            # Menu command
-            if cmd_type == "menu":
-                session.menu_state = None
-                session.waiting_for_array = False
-                return self._get_main_menu()
-            
-            # Menu selection
-            if cmd_type == "menu_selection":
-                menu = parsed["menu"]
-                session.menu_state = menu
-                if menu == "sort":
-                    return self._get_sorting_menu()
-                elif menu == "path":
-                    session.menu_state = None
-                    return {
-                        "status": "success",
-                        "type": "info",
-                        "message": "Got pathfinding command",
-                    }
-                elif menu == "struct":
-                    session.menu_state = None
-                    return {
-                        "status": "success",
-                        "type": "info",
-                        "message": "Got structure command",
-                    }
-            
-            # Next command
-            if cmd_type == "next":
-                if not session.state:
-                    raise ValueError(
-                        "No active algorithm. Start a sorting algorithm first."
-                    )
-                return session.state.step()
-            
-            # Explain command
-            if cmd_type == "explain":
-                if not session.algorithm or not session.state:
-                    raise ValueError("No active algorithm to explain. Start a sorting session first.")
-                
-                algorithm_name = session.algorithm
-                state = session.state
-                
-                # Get algorithm principle
-                principle = self._get_algorithm_principle(algorithm_name)
-                
-                # Build step-by-step explanation based on algorithm type
-                step_explanation = ""
-                
-                if isinstance(state, BubbleSortState):
-                    recent_history = state.history[-5:] if hasattr(state, 'history') else []
-                    history_text = (
-                        "\n".join(f"- {entry}" for entry in recent_history)
-                        if recent_history
-                        else "- The algorithm is ready to start but no comparisons have been made yet."
-                    )
-                    if not state.completed and len(state.array) > 1:
-                        if state.j >= len(state.array) - 1:
-                            next_hint = (
-                                f"The next pass will begin at index 0 after completing pass {state.i + 1}."
-                            )
-                        else:
-                            next_hint = (
-                                f"Upcoming action: compare indices {state.j} and {state.j + 1} "
-                                f"({state.array[state.j]} vs {state.array[state.j + 1]})."
-                            )
-                    elif state.completed:
-                        next_hint = "All elements are sorted. No further actions are required."
-                    else:
-                        next_hint = "Array of length 0 or 1; no actions required."
+        if lowered in MENU_SELECTION_NUMBERS["pathfinding"]:
+            session.stage = "menu"
+            return self._coming_soon_payload("Pathfinding")
+        
+        if lowered in MENU_SELECTION_NUMBERS["data_structures"]:
+            session.stage = "menu"
+            return self._coming_soon_payload("Data Structures")
 
-                    original = state.original_array if hasattr(state, 'original_array') else state.array
-                    step_explanation = (
-                        f"Current Progress:\n"
-                        f"- Original array: {original}\n"
-                        f"- Current array: {state.array}\n"
-                        f"- Pass completed: {state.i}\n"
-                        f"- Recent actions:\n{history_text}\n"
-                        f"- {next_hint}"
-                    )
-                elif isinstance(state, (SelectionSortState, InsertionSortState, QuickSortState, MergeSortState, HeapSortState)):
-                    # For other algorithms, provide current state information
-                    if hasattr(state, 'completed') and state.completed:
-                        step_explanation = (
-                            f"Current Progress:\n"
-                            f"- Array: {state.array}\n"
-                            f"- Status: Sorting complete. All elements are in sorted order."
-                        )
-                    else:
-                        step_explanation = (
-                            f"Current Progress:\n"
-                            f"- Array: {state.array}\n"
-                            f"- Status: Algorithm is in progress. Use 'next' to see the next step."
-                        )
-                else:
-                    step_explanation = (
-                        f"Current Progress:\n"
-                        f"- Array: {state.array if hasattr(state, 'array') else 'N/A'}\n"
-                        f"- Status: Algorithm is running."
-                    )
-                
-                # Combine principle and step-by-step explanation
-                explanation = (
-                    f"=== {algorithm_name} Explanation ===\n\n"
-                    f"Algorithm Principle:\n{principle}\n\n"
-                    f"{step_explanation}"
+        # Check if any sorting keyword appears in the input
+        if any(keyword in lowered for keyword in MENU_SORTING_KEYWORDS):
+            session.stage = "sorting_menu"
+            session.pending_algorithm = None
+            return self._sorting_menu_payload()
+
+        # Check if any pathfinding keyword appears in the input
+        if any(keyword in lowered for keyword in MENU_PATHFINDING_KEYWORDS):
+            session.stage = "menu"
+            return self._coming_soon_payload("Pathfinding")
+
+        # Check if any data structure keyword appears in the input
+        if any(keyword in lowered for keyword in MENU_DATA_STRUCTURE_KEYWORDS):
+            session.stage = "menu"
+            return self._coming_soon_payload("Data Structures")
+
+        # Check for algorithm selection - try exact match first, then search within input
+        selection_algorithm = self._match_sorting_selection(lowered)
+        if not selection_algorithm:
+            # Try to find algorithm keywords within the input
+            for keyword, algo_name in SORTING_SELECTION_KEYWORDS.items():
+                if keyword in lowered:
+                    selection_algorithm = algo_name
+                    break
+        
+        if selection_algorithm:
+            session.pending_algorithm = selection_algorithm
+            session.stage = "await_array"
+            return self._prompt_array_payload(selection_algorithm)
+
+        if session.stage == "await_array" and self._is_array_literal(stripped):
+            if not session.pending_algorithm:
+                raise ValueError(
+                    "Select a sorting algorithm before entering the array."
+                )
+            array_values = self._parse_array(stripped)
+            builder = ALGORITHM_BUILDERS[session.pending_algorithm]
+            steps = builder(array_values)
+            session.algorithm = session.pending_algorithm
+            session.state = AlgorithmRunner(session.algorithm, steps)
+            session.pending_algorithm = None
+            session.stage = "visualizing"
+            return session.state.step()
+
+        visualize_match = self.VISUALIZE_RE.match(command)
+        if visualize_match:
+            algo_key = visualize_match.group("algo").strip().lower()
+            canonical = ALGORITHM_ALIASES.get(algo_key)
+            if not canonical:
+                raise ValueError(
+                    f"Unknown algorithm. Supported: {', '.join(sorted(ALGORITHM_BUILDERS.keys()))}."
+                )
+            array_literal = visualize_match.group("array").strip()
+            try:
+                array_values = self._parse_array(array_literal)
+            except ValueError:
+                raise ValueError(
+                    "Invalid array literal. Use comma-separated integers inside brackets, e.g. [5, 2, 1]."
                 )
 
-                return {
-                    "status": "success",
-                    "type": "explanation",
-                    "algorithm": algorithm_name,
-                    "explanation": explanation,
-                }
+            builder = ALGORITHM_BUILDERS[canonical]
+            steps = builder(array_values)
+            session.algorithm = canonical
+            session.state = AlgorithmRunner(canonical, steps)
+            session.pending_algorithm = None
+            session.stage = "visualizing"
+            return session.state.step()
+
+        if self.NEXT_RE.match(command):
+            if not session.state:
+                raise ValueError(
+                    "No active algorithm. Select one from the menu or use the visualize command."
+                )
+            return session.state.step()
+
+        # Check for explain command - match "explain" anywhere in the input
+        if "explain" in lowered:
+            # Try to find which algorithm to explain from the input
+            algorithm_to_explain = None
             
-            # Reset command
-            if cmd_type == "reset":
-                session.reset()
-                return {
-                    "status": "success",
-                    "type": "info",
-                    "message": "Session reset.",
-                }
+            # First check if there's an active algorithm
+            if session.algorithm:
+                algorithm_to_explain = session.algorithm
             
-            # Visualize command (legacy)
-            if cmd_type == "visualize":
-                algo = parsed.get("algorithm", "bubble sort")
-                arr = parsed.get("array", [])
-                if algo == "bubble sort":
-                    session.algorithm = "Bubble Sort"
-                    session.state = BubbleSortState(array=arr)
-                    return session.state.step()
-                else:
-                    raise ValueError("Unknown algorithm. Supported: Bubble Sort.")
-        
-        # If ANTLR parsing failed, return error
+            # If no active algorithm, try to find algorithm name in the input
+            if not algorithm_to_explain:
+                for keyword, algo_name in SORTING_SELECTION_KEYWORDS.items():
+                    if keyword in lowered:
+                        algorithm_to_explain = algo_name
+                        break
+            
+            if not algorithm_to_explain:
+                raise ValueError(
+                    "No algorithm specified. Either select an algorithm first, or include the algorithm name in your request (e.g., 'explain bubble sort')."
+                )
+            
+            explanation = ALGORITHM_EXPLANATIONS.get(
+                algorithm_to_explain, "Explanation unavailable."
+            )
+            return {
+                "status": "success",
+                "type": "explanation",
+                "algorithm": algorithm_to_explain,
+                "explanation": explanation,
+            }
+
+        if self.RESET_RE.match(command):
+            session.reset()
+            return {
+                "status": "success",
+                "type": "info",
+                "message": "Session reset.",
+            }
+
         raise ValueError(
-            "Unknown command or invalid syntax. Available commands: 'menu', 'sorting', '1-6' (algorithm selection), "
-            "'next', 'explain', 'reset', or array input (e.g., '5,2,8,1,9')."
+            "Unknown command or invalid syntax. Type 'menu' to restart or 'visualize bubble sort on [5,2,1]'."
         )
 
     @staticmethod
-    def _parse_array(array_literal: str) -> List[int]:
-        # Accept commas and spaces, ignore empty tokens
-        tokens = [t.strip() for t in array_literal.split(",")]
-        result: List[int] = []
-        for tok in tokens:
-            if tok == "":
-                continue
-            result.append(int(tok))
-        return result
+    def _match_sorting_selection(token: str) -> Optional[str]:
+        if token in SORTING_NUMBER_TO_ALGORITHM:
+            return SORTING_NUMBER_TO_ALGORITHM[token]
+        return SORTING_SELECTION_KEYWORDS.get(token)
 
     @staticmethod
-    def _try_parse_menu(command: str) -> Optional[str]:
-        """Return one of 'sort' | 'path' | 'struct' if the input contains menu keywords; otherwise None."""
-        cmd_lower = command.strip().lower()
-        
-        # Check for sorting keywords
-        sort_keywords = ['sort', 'sorting', '1']
-        if any(keyword in cmd_lower for keyword in sort_keywords):
-            return "sort"
-            
-        # Check for pathfinding keywords  
-        path_keywords = ['path', 'pathfinding', '2']
-        if any(keyword in cmd_lower for keyword in path_keywords):
-            return "path"
-            
-        # Check for data structure keywords
-        struct_keywords = ['data', 'structure', 'structures', '3']
-        if any(keyword in cmd_lower for keyword in struct_keywords):
-            return "struct"
-            
-        return None
-
-    def _get_main_menu(self) -> Dict[str, Any]:
-        """Return the main selection menu."""
-        menu_text = (
-            "Hello, what are we going to do today, developer?\n"
-            "1. Sorting algorithms.\n"
-            "2. Pathfinding algorithms.\n"
-            "3. Data structures"
-        )
-        
-        return {
-            "status": "success",
-            "type": "greeting",
-            "message": menu_text,
-        }
-
-    def _get_sorting_menu(self) -> Dict[str, Any]:
-        """Return the sorting algorithms menu."""
-        menu_text = "Currently we have these algorithms for sorting, please select an algorithm that you want to explore:\n\n"
-        for num, name, keyword in self.SORTING_ALGORITHMS:
-            menu_text += f"{num}. {name}\n"
-        menu_text += "\nYou can type a number (1-6) or part of the algorithm name (e.g., 'bubble', 'quick')."
-        
+    def _menu_payload() -> Dict[str, Any]:
         return {
             "status": "success",
             "type": "menu",
-            "message": menu_text,
+            "message": MAIN_MENU_MESSAGE,
+            "options": [
+                {"id": "1", "label": "Sorting Algorithms"},
+                {"id": "2", "label": "Pathfinding Algorithms (coming soon)"},
+                {"id": "3", "label": "Data Structures (coming soon)"},
+            ],
         }
 
-    def _try_parse_sorting_algorithm(self, command: str) -> Optional[str]:
-        """Parse sorting algorithm selection from command."""
-        cmd_lower = command.strip().lower()
-        
-        # Check for number selection (1-6)
-        if cmd_lower in ["1", "2", "3", "4", "5", "6"]:
-            return cmd_lower
-            
-        # Check for keyword matches
-        for num, name, keyword in self.SORTING_ALGORITHMS:
-            if keyword in cmd_lower or name.lower() in cmd_lower:
-                return num
-                
-        return None
-
-    def _handle_sorting_algorithm_selection(self, session: AlgorithmSession, selection: str) -> Dict[str, Any]:
-        """Handle sorting algorithm selection and return appropriate response."""
-        # Find the algorithm by number
-        algo_info = None
-        for num, name, keyword in self.SORTING_ALGORITHMS:
-            if num == selection:
-                algo_info = (num, name, keyword)
-                break
-                
-        if algo_info is None:
-            return {
-                "status": "error",
-                "message": "Invalid algorithm selection. Please choose 1-6 or type part of the algorithm name."
-            }
-            
-        num, name, keyword = algo_info
-        
-        # Store selected algorithm and prompt for array input
-        session.selected_algorithm = name
-        session.waiting_for_array = True
-        session.menu_state = None  # Exit menu state
-        
+    @staticmethod
+    def _sorting_menu_payload() -> Dict[str, Any]:
         return {
             "status": "success",
-            "type": "prompt",
-            "message": f"Great! You selected {name}. Now please enter an array of numbers to sort. Separate each number with a comma (e.g., 5,2,8,1,9):"
+            "type": "sorting_menu",
+            "message": SORTING_MENU_MESSAGE,
+            "options": [
+                {"id": "1", "label": "Bubble Sort"},
+                {"id": "2", "label": "Merge Sort"},
+                {"id": "3", "label": "Selection Sort"},
+                {"id": "4", "label": "Insertion Sort"},
+                {"id": "5", "label": "Quick Sort"},
+                {"id": "6", "label": "Heap Sort"},
+            ],
         }
 
-    def _handle_array_input(self, session: AlgorithmSession, command: str) -> Dict[str, Any]:
-        """Handle array input and start algorithm visualization."""
-        try:
-            # Parse the array from user input
-            array = self._parse_array(command.strip())
-            
-            # Reset waiting state
-            session.waiting_for_array = False
-            
-            # Start the appropriate algorithm
-            algorithm = session.selected_algorithm
-            
-            if algorithm == "Bubble Sort":
-                session.algorithm = "Bubble Sort"
-                session.state = BubbleSortState(array=array)
-            elif algorithm == "Selection Sort":
-                session.algorithm = "Selection Sort"
-                session.state = SelectionSortState(array=array)
-            elif algorithm == "Insertion Sort":
-                session.algorithm = "Insertion Sort"
-                session.state = InsertionSortState(array=array)
-            elif algorithm == "Quick Sort":
-                session.algorithm = "Quick Sort"
-                session.state = QuickSortState(array=array)
-            elif algorithm == "Merge Sort":
-                session.algorithm = "Merge Sort"
-                session.state = MergeSortState(array=array)
-            elif algorithm == "Heap Sort":
-                session.algorithm = "Heap Sort"
-                session.state = HeapSortState(array=array)
-            else:
-                return {
-                    "status": "error",
-                    "message": f"Unknown algorithm: {algorithm}"
-                }
-            
-            # Return first step immediately
-            return session.state.step()
-                
-        except ValueError as e:
-            return {
-                "status": "error",
-                "message": "Invalid array format. Please enter numbers separated by commas (e.g., 5,2,8,1,9)."
-            }
+    @staticmethod
+    def _prompt_array_payload(algorithm: str) -> Dict[str, Any]:
+        return {
+            "status": "success",
+            "type": "await_array",
+            "algorithm": algorithm,
+            "message": (
+                f"Enter the array for {algorithm} as comma-separated integers. "
+                "Example: 5, 2, 9, 1. Type 'menu' to go back."
+            ),
+        }
+
+    @staticmethod
+    def _coming_soon_payload(topic: str) -> Dict[str, Any]:
+        return {
+            "status": "success",
+            "type": "info",
+            "message": f"{topic} visualizations are coming soon. Type 'menu' to go back.",
+        }
+
+    @staticmethod
+    def _is_array_literal(text: str) -> bool:
+        stripped = text.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            inner = stripped[1:-1].strip()
+            return True if not inner else bool(ARRAY_INPUT_RE.match(inner))
+        return bool(ARRAY_INPUT_RE.match(stripped))
+
+    @staticmethod
+    def _parse_array(array_literal: str) -> List[int]:
+        cleaned = array_literal.strip()
+        if cleaned.startswith("[") and cleaned.endswith("]"):
+            cleaned = cleaned[1:-1].strip()
+        if not cleaned:
+            return []
+        tokens = [token.strip() for token in cleaned.split(",")]
+        result: List[int] = []
+        for token in tokens:
+            if token == "":
+                continue
+            result.append(int(token))
+        return result
 
 
