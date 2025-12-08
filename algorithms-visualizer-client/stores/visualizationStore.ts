@@ -1,12 +1,23 @@
 import { create } from 'zustand';
 
+export interface VisualizationGridData {
+  start: number[];
+  end: number[];
+  barriers: number[][];
+  grid_size: { rows: number; cols: number };
+  visited?: number[][];
+  path?: number[][];
+  frontier?: number[][];
+}
+
 export interface VisualizationStepData {
   algorithm: string;
   step: number;
   data: {
-    array: number[];
+    array?: number[];
     highlighted_indices?: number[];
     sorted_indices?: number[];
+    grid?: VisualizationGridData;
   };
   explanation: string;
   isFinal?: boolean;
