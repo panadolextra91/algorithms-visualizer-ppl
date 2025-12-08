@@ -2,13 +2,17 @@ import React from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import BarChart from './BarChart';
 
+import { VisualizationGridData } from '@/stores/visualizationStore';
+import PathfindingGridView from '../pathfinding/PathfindingGridView';
+
 interface VisualizationMessageProps {
   algorithm: string;
   step: number;
   data: {
-    array: number[];
+    array?: number[];
     highlighted_indices?: number[];
     sorted_indices?: number[];
+    grid?: VisualizationGridData;
   };
   explanation: string;
   onNextStep?: () => void;
@@ -45,11 +49,15 @@ const VisualizationMessage: React.FC<VisualizationMessageProps> = ({
         </Text>
       </View>
       
-      <BarChart
-        data={data.array}
-        highlightedIndices={data.highlighted_indices || []}
-        sortedIndices={data.sorted_indices || []}
-      />
+      {data.grid ? (
+        <PathfindingGridView grid={data.grid} />
+      ) : (
+        <BarChart
+          data={data.array || []}
+          highlightedIndices={data.highlighted_indices || []}
+          sortedIndices={data.sorted_indices || []}
+        />
+      )}
       
       <View style={styles.explanationContainer}>
         <Text style={styles.explanationText}>{explanation}</Text>

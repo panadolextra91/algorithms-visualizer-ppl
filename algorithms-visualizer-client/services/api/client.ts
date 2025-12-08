@@ -18,6 +18,7 @@ export interface ApiResponse {
   };
   explanation?: string;
   options?: { id: string; label: string }[];
+  grid_size?: { rows: number; cols: number };
 }
 
 export interface CommandRequest {

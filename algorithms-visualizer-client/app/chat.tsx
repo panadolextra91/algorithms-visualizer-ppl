@@ -16,9 +16,10 @@ import { Ionicons } from '@expo/vector-icons';
 import ApiClient, { ApiResponse } from '@/services/api/client';
 import SessionManager from '@/services/session/SessionManager';
 import { VisualizationMessage } from '@/components/charts';
+import PathfindingGrid from '@/components/pathfinding/PathfindingGrid';
 import { useVisualizationStore } from '@/stores/visualizationStore';
 
-type MessageType = 'text' | 'visualization_card' | 'menu' | 'await_array';
+type MessageType = 'text' | 'visualization_card' | 'menu' | 'await_array' | 'await_grid';
 
 interface MenuOption {
   id: string;
@@ -33,6 +34,7 @@ interface Message {
   type?: MessageType;
   options?: MenuOption[];
   algorithm?: string;
+  grid_size?: { rows: number; cols: number };
 }
 
 export default function ChatScreen() {
@@ -80,7 +82,7 @@ export default function ChatScreen() {
       response.type === 'visualization_step' &&
       response.algorithm &&
       response.data &&
-      Array.isArray(response.data.array) &&
+      (Array.isArray(response.data.array) || response.data.grid) &&
       response.explanation
     ) {
       if (
@@ -101,6 +103,7 @@ export default function ChatScreen() {
           array: response.data.array,
           highlighted_indices: response.data.highlighted_indices || [],
           sorted_indices: response.data.sorted_indices || [],
+          grid: (response as any).data?.grid,
         },
         explanation: response.explanation,
         isFinal: isFinalStep,
@@ -137,6 +140,20 @@ export default function ChatScreen() {
             timestamp: new Date(),
             type: 'await_array',
             algorithm: response.algorithm,
+          },
+        ];
+      }
+
+      if (response.type === 'await_grid') {
+        return [
+          {
+            id: `await-grid-${Date.now()}`,
+            text: response.message || 'Configure the grid for pathfinding.',
+            isUser: false,
+            timestamp: new Date(),
+            type: 'await_grid',
+            algorithm: response.algorithm,
+            grid_size: response.grid_size || { rows: 15, cols: 15 },
           },
         ];
       }
@@ -410,6 +427,22 @@ export default function ChatScreen() {
       );
     }
 
+    if (message.type === 'await_grid') {
+      return (
+        <View key={message.id} style={styles.gridWrapper}>
+          <PathfindingGrid
+            algorithm={message.algorithm || 'Pathfinding'}
+            gridSize={message.grid_size || { rows: 15, cols: 15 }}
+            sessionId={sessionId}
+            onGridConfigured={() => {
+              // Grid configured, visualization will start
+              // The server response will be handled by maybeHandleVisualizationResponse
+            }}
+          />
+        </View>
+      );
+    }
+
     // Render regular text message
     return (
       <View
@@ -586,6 +619,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   visualizationWrapper: {
+    marginVertical: 8,
+    marginHorizontal: 16,
+  },
+  gridWrapper: {
     marginVertical: 8,
     marginHorizontal: 16,
   },
