@@ -11,6 +11,8 @@ export interface ApiResponse {
   message?: string;
   algorithm?: string;
   step?: number;
+  // Present on visualization_step responses from the server
+  isFinal?: boolean;
   data?: {
     array?: number[];
     highlighted_indices?: number[];
@@ -18,6 +20,7 @@ export interface ApiResponse {
   };
   explanation?: string;
   options?: { id: string; label: string }[];
+  grid_size?: { rows: number; cols: number };
 }
 
 export interface CommandRequest {

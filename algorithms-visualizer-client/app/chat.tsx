@@ -16,9 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import ApiClient, { ApiResponse } from '@/services/api/client';
 import SessionManager from '@/services/session/SessionManager';
 import { VisualizationMessage } from '@/components/charts';
+import PathfindingGrid from '@/components/pathfinding/PathfindingGrid';
+import PathfindingGridView from '@/components/pathfinding/PathfindingGridView';
 import { useVisualizationStore } from '@/stores/visualizationStore';
 
-type MessageType = 'text' | 'visualization_card' | 'menu' | 'await_array';
+type MessageType = 'text' | 'visualization_card' | 'menu' | 'await_array' | 'await_grid';
 
 interface MenuOption {
   id: string;
@@ -33,6 +35,7 @@ interface Message {
   type?: MessageType;
   options?: MenuOption[];
   algorithm?: string;
+  grid_size?: { rows: number; cols: number };
 }
 
 export default function ChatScreen() {
@@ -58,7 +61,12 @@ export default function ChatScreen() {
   const goNextCached = useVisualizationStore(state => state.goNextCached);
   const resetVisualization = useVisualizationStore(state => state.reset);
 
-  const ensureVisualizationMessage = () => {
+  const ensureVisualizationMessage = (forGrid: boolean) => {
+    // For grid-based pathfinding, we visualize directly in the original await_grid message,
+    // so we don't need a separate visualization card.
+    if (forGrid) {
+      return;
+    }
     setMessages(prev => {
       const exists = prev.some(msg => msg.type === 'visualization_card');
       if (exists) {
@@ -76,11 +84,21 @@ export default function ChatScreen() {
   };
 
   const maybeHandleVisualizationResponse = (response: ApiResponse): boolean => {
+    const hasGrid = !!(response as any)?.data?.grid;
+    if (hasGrid) {
+      console.log('[Chat] Received grid visualization step', {
+        algorithm: response.algorithm,
+        step: response.step,
+        isFinal: (response as any).isFinal,
+        grid: (response as any).data?.grid,
+      });
+    }
+
     if (
       response.type === 'visualization_step' &&
       response.algorithm &&
       response.data &&
-      Array.isArray(response.data.array) &&
+      (Array.isArray(response.data.array) || hasGrid) &&
       response.explanation
     ) {
       if (
@@ -90,9 +108,15 @@ export default function ChatScreen() {
         resetVisualization();
       }
 
+      const hasArray = Array.isArray(response.data.array);
+      const isFinalFlag = response.isFinal === true;
       const isFinalStep =
-        (response.step ?? 0) === -1 ||
-        (response.data.sorted_indices?.length || 0) === response.data.array.length;
+        isFinalFlag ||
+        (hasArray &&
+          ((response.step ?? 0) === -1 ||
+            ((response.data.sorted_indices?.length || 0) ===
+              (response.data.array?.length || -1)))) ||
+        (hasGrid && isFinalFlag);
 
       addVisualizationStep({
         algorithm: response.algorithm,
@@ -101,11 +125,13 @@ export default function ChatScreen() {
           array: response.data.array,
           highlighted_indices: response.data.highlighted_indices || [],
           sorted_indices: response.data.sorted_indices || [],
+          grid: (response as any).data?.grid,
         },
         explanation: response.explanation,
         isFinal: isFinalStep,
       });
-      ensureVisualizationMessage();
+      // Ensure visualization card exists only for array-based visualizations.
+      ensureVisualizationMessage(hasGrid);
       return true;
     }
     return false;
@@ -137,6 +163,20 @@ export default function ChatScreen() {
             timestamp: new Date(),
             type: 'await_array',
             algorithm: response.algorithm,
+          },
+        ];
+      }
+
+      if (response.type === 'await_grid') {
+        return [
+          {
+            id: `await-grid-${Date.now()}`,
+            text: response.message || 'Configure the grid for pathfinding.',
+            isUser: false,
+            timestamp: new Date(),
+            type: 'await_grid',
+            algorithm: response.algorithm,
+            grid_size: response.grid_size || { rows: 15, cols: 15 },
           },
         ];
       }
@@ -214,6 +254,36 @@ export default function ChatScreen() {
     }
   }, [messages]);
 
+  const autoNextTimer = useRef<NodeJS.Timeout | null>(null);
+
+  // Auto-advance for pathfinding grid visualizations (play steps automatically)
+  useEffect(() => {
+    if (
+      currentVisualizationStep &&
+      currentVisualizationStep.data?.grid &&
+      !currentVisualizationStep.isFinal &&
+      !isNextLoading &&
+      !isLoading
+    ) {
+      console.log('[AutoPlay] Scheduling next step', {
+        step: currentVisualizationStep.step,
+        isFinal: currentVisualizationStep.isFinal,
+      });
+      if (autoNextTimer.current) {
+        clearTimeout(autoNextTimer.current);
+      }
+      autoNextTimer.current = setTimeout(() => {
+        handleNextStep();
+      }, 500); // adjust speed here (milliseconds per step)
+      return () => {
+        if (autoNextTimer.current) {
+          clearTimeout(autoNextTimer.current);
+        }
+      };
+    }
+    return;
+  }, [currentVisualizationStep?.step, currentVisualizationStep?.data?.grid, currentVisualizationStep?.isFinal, isNextLoading, isLoading]);
+
   const sendCommand = useCallback(
     async (rawText: string, displayText?: string) => {
       const trimmed = rawText.trim();
@@ -284,7 +354,15 @@ export default function ChatScreen() {
   };
 
   const handleNextStep = async () => {
+    console.log('[NextStep] invoked', {
+      hasCached: hasNextCachedStep,
+      isNextLoading,
+      isLoading,
+      currentStep: currentVisualizationStep?.step,
+      isFinal: currentVisualizationStep?.isFinal,
+    });
     if (goNextCached()) {
+      console.log('[NextStep] used cached step');
       return;
     }
 
@@ -301,7 +379,9 @@ export default function ChatScreen() {
     setIsNextLoading(true);
 
     try {
+      console.log('[NextStep] sending next to server');
       const response = await ApiClient.sendCommand(sessionId, 'next');
+      console.log('[NextStep] server response', response);
       const handled = maybeHandleVisualizationResponse(response);
       if (!handled) {
         const serverMessage: Message = {
@@ -406,6 +486,38 @@ export default function ChatScreen() {
               </Text>
             ))}
           </Text>
+        </View>
+      );
+    }
+
+    if (message.type === 'await_grid') {
+      const hasGridStep =
+        !!currentVisualizationStep?.data?.grid &&
+        (!currentVisualizationAlgorithm ||
+          currentVisualizationAlgorithm === message.algorithm);
+
+      return (
+        <View key={message.id} style={styles.gridWrapper}>
+          {hasGridStep ? (
+            // Visualization mode: reuse the same message slot to show the animated grid
+            <PathfindingGridView grid={currentVisualizationStep!.data!.grid!} />
+          ) : (
+            // Configuration mode: interactive 10x10 grid
+            <PathfindingGrid
+              algorithm={message.algorithm || 'Pathfinding'}
+              gridSize={message.grid_size || { rows: 10, cols: 10 }}
+              sessionId={sessionId}
+              onGridConfigured={() => {
+                // Grid configured; visualization will start once we receive steps
+              }}
+              onVisualizationResponse={(response) => {
+                const handled = maybeHandleVisualizationResponse(response);
+                if (!handled) {
+                  handleServerResponse(response);
+                }
+              }}
+            />
+          )}
         </View>
       );
     }
@@ -586,6 +698,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   visualizationWrapper: {
+    marginVertical: 8,
+    marginHorizontal: 16,
+  },
+  gridWrapper: {
     marginVertical: 8,
     marginHorizontal: 16,
   },

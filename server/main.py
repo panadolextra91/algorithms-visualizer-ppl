@@ -4,9 +4,9 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 try:
-    from .dsl_interpreter import AlgorithmSessionManager
+    from .dsl_interpreter import AlgorithmSessionManager, _menu_payload
 except ImportError:
-    from dsl_interpreter import AlgorithmSessionManager  # type: ignore
+    from dsl_interpreter import AlgorithmSessionManager, _menu_payload  # type: ignore
 
 
 app = FastAPI(title="Algorithms Visualizer Server")
@@ -41,7 +41,7 @@ def greeting() -> Dict[str, Any]:
     """
     Return the main menu so the client can display it immediately.
     """
-    return AlgorithmSessionManager._menu_payload()
+    return _menu_payload()
 
 
 
