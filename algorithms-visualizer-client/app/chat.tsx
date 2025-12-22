@@ -109,12 +109,14 @@ export default function ChatScreen() {
       }
 
       const hasArray = Array.isArray(response.data.array);
+      const isFinalFlag = response.isFinal === true;
       const isFinalStep =
-        response.isFinal === true ||
+        isFinalFlag ||
         (hasArray &&
-          (response.step ?? 0) === -1 ||
-          ((response.data.sorted_indices?.length || 0) === (response.data.array?.length || -1))) ||
-        (hasGrid && response.isFinal === true);
+          ((response.step ?? 0) === -1 ||
+            ((response.data.sorted_indices?.length || 0) ===
+              (response.data.array?.length || -1)))) ||
+        (hasGrid && isFinalFlag);
 
       addVisualizationStep({
         algorithm: response.algorithm,
