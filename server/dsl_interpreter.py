@@ -98,6 +98,8 @@ PATHFINDING_SELECTION_KEYWORDS = {
     "dijkstra's algorithm": "Dijkstra's Algorithm",
     "dijkstras algorithm": "Dijkstra's Algorithm",
     "dijkstra algorithm": "Dijkstra's Algorithm",
+    'dijkstra"s algorithm': "Dijkstra's Algorithm",
+    "dijkstra s algorithm": "Dijkstra's Algorithm",
     "the first": "Dijkstra's Algorithm",
     "dijkstra's": "Dijkstra's Algorithm",
     "dijkstras": "Dijkstra's Algorithm",
@@ -621,12 +623,14 @@ def _make_grid_step(
     path: List[GridPoint],
     frontier: Optional[List[GridPoint]] = None,
     explanation: str = "",
+    is_final: bool = False,
 ) -> Dict[str, Any]:
     return {
         "status": "success",
         "type": "visualization_step",
         "algorithm": algorithm,
         "step": step_number,
+        "isFinal": is_final,
         "data": {
             "grid": {
                 "start": list(start),
@@ -645,8 +649,9 @@ def _make_grid_step(
 def _grid_search(
     graph_data: Dict[str, Any], algorithm: str
 ) -> List[Dict[str, Any]]:
-    rows = graph_data.get("grid_size", {}).get("rows", 15)
-    cols = graph_data.get("grid_size", {}).get("cols", 15)
+    # Default to a 10x10 grid if not explicitly specified
+    rows = graph_data.get("grid_size", {}).get("rows", 10)
+    cols = graph_data.get("grid_size", {}).get("cols", 10)
     start_list = graph_data.get("start", [0, 0])
     end_list = graph_data.get("end", [0, 0])
     start = (int(start_list[0]), int(start_list[1]))
@@ -675,6 +680,7 @@ def _grid_search(
                 path=path,
                 frontier=list(frontier),
                 explanation=note,
+                is_final=False,
             )
         )
         step_num += 1
@@ -685,6 +691,8 @@ def _grid_search(
         queue: deque[GridPoint] = deque()
         queue.append(start)
         parents[start] = start
+        # Show start as visited for the first render, but don't block expansion
+        visited.append(start)
         record_state(start, list(queue), "Initialize BFS with start node.")
 
         while queue:
@@ -705,6 +713,7 @@ def _grid_search(
     elif algorithm.lower().startswith("depth-first") or algorithm.lower().startswith("dfs"):
         stack: List[GridPoint] = [start]
         parents[start] = start
+        visited.append(start)
         record_state(start, list(stack), "Initialize DFS with start node.")
 
         while stack:
@@ -715,12 +724,12 @@ def _grid_search(
                 break
             if current not in visited:
                 visited.append(current)
-                neighbors = _neighbors(current, rows, cols)
-                for nb in neighbors:
-                    if nb in barriers_set or nb in visited or nb in stack:
-                        continue
-                    parents[nb] = current
-                    stack.append(nb)
+            neighbors = _neighbors(current, rows, cols)
+            for nb in neighbors:
+                if nb in barriers_set or nb in visited or nb in stack:
+                    continue
+                parents[nb] = current
+                stack.append(nb)
             record_state(current, list(stack), f"Exploring neighbors of {current}.")
 
     else:
@@ -735,12 +744,11 @@ def _grid_search(
         dist: Dict[GridPoint, int] = {start: 0}
         parents[start] = start
         heapq.heappush(pq, (0, start))
+        visited.append(start)
         record_state(start, [start], "Initialize search with start node.")
 
         while pq:
             _, current = heapq.heappop(pq)
-            if current in visited:
-                continue
             visited.append(current)
 
             if current == end:
@@ -773,6 +781,7 @@ def _grid_search(
             path=final_path,
             frontier=[],
             explanation="Path reconstruction complete." if final_path else "No path found.",
+            is_final=True,
         )
     )
     return steps
@@ -1101,11 +1110,11 @@ class AlgorithmSessionManager:
         if lowered == "menu":
             session.reset()
             session.stage = "menu"
-            return self._menu_payload()
+            return _menu_payload()
 
         # If in sorting_menu stage, prioritize algorithm selection over menu selection
         if session.stage == "sorting_menu":
-            selection_algorithm = self._match_sorting_selection(lowered)
+            selection_algorithm = _match_sorting_selection(lowered)
             if not selection_algorithm:
                 # Try to find algorithm keywords within the input
                 for keyword, algo_name in SORTING_SELECTION_KEYWORDS.items():
@@ -1116,11 +1125,11 @@ class AlgorithmSessionManager:
             if selection_algorithm:
                 session.pending_algorithm = selection_algorithm
                 session.stage = "await_array"
-                return self._prompt_array_payload(selection_algorithm)
+                return _prompt_array_payload(selection_algorithm)
 
         # If in pathfinding_menu stage, prioritize algorithm selection over menu selection
         if session.stage == "pathfinding_menu":
-            selection_algorithm = self._match_pathfinding_selection(lowered)
+            selection_algorithm = _match_pathfinding_selection(lowered)
             if not selection_algorithm:
                 # Try to find algorithm keywords within the input
                 for keyword, algo_name in PATHFINDING_SELECTION_KEYWORDS.items():
@@ -1131,23 +1140,27 @@ class AlgorithmSessionManager:
             if selection_algorithm:
                 session.pending_algorithm = selection_algorithm
                 session.stage = "await_grid"
-                return self._prompt_graph_payload(selection_algorithm)
+                return _prompt_graph_payload(selection_algorithm)
+
+        stripped_clean_for_grid = stripped.strip()
+        looks_like_json_grid = (
+            stripped_clean_for_grid.startswith("{")
+            and ("\"start\"" in stripped_clean_for_grid or "'start'" in stripped_clean_for_grid)
+        )
 
         # Handle duplicate grid config submission when already visualizing
-        if session.stage == "visualizing" and session.algorithm and session.state and stripped.startswith("{"):
-            # Already visualizing, return current step instead of error
+        if session.stage == "visualizing" and session.algorithm and session.state and looks_like_json_grid:
             import logging
             logger = logging.getLogger(__name__)
             log_msg = "[Grid Handler] Already visualizing, returning current step"
             logger.info(log_msg)
             print(log_msg)
-            # Return the current step (don't advance)
             if session.state.steps:
                 current_idx = session.state.index if session.state.index < len(session.state.steps) else len(session.state.steps) - 1
                 return session.state.steps[current_idx]
 
         # Handle grid configuration for pathfinding algorithms (check early to avoid conflicts)
-        if session.stage == "await_grid":
+        if session.stage == "await_grid" or (looks_like_json_grid and (session.pending_algorithm or session.algorithm)):
             import logging
             logger = logging.getLogger(__name__)
             log_msg = (f"[Grid Handler] Processing grid config: stage=await_grid, "
@@ -1169,7 +1182,7 @@ class AlgorithmSessionManager:
                     print(error_msg)
                     raise ValueError("Select a pathfinding algorithm first.")
                 
-                grid_config = self._generate_default_map(lowered_for_map)
+                grid_config = _generate_default_map(lowered_for_map)
                 log_msg = (f"[Grid Handler] Generated default map: {lowered_for_map}, "
                           f"start={grid_config['start']}, end={grid_config['end']}, "
                           f"barriers_count={len(grid_config['barriers'])}")
@@ -1190,7 +1203,7 @@ class AlgorithmSessionManager:
             # Check for grid configuration JSON input
             # Format: {"start": [row, col], "end": [row, col], "barriers": [[row, col], ...]}
             # Try to parse as JSON - check if it looks like JSON first
-            stripped_clean = stripped.strip()
+            stripped_clean = stripped_clean_for_grid
             log_msg = (f"[Grid Handler] Checking for JSON: starts_with_brace={stripped_clean.startswith('{')}, "
                       f"starts_with_bracket={stripped_clean.startswith('[')}")
             logger.info(log_msg)
@@ -1207,11 +1220,25 @@ class AlgorithmSessionManager:
                     logger.info(log_msg)
                     print(log_msg)
                     
-                    if not session.pending_algorithm:
+                    # Resolve algorithm
+                    algo_from_payload = grid_config.get("algorithm")
+                    algo_candidate = algo_from_payload or session.pending_algorithm or session.algorithm
+
+                    if not algo_candidate:
                         error_msg = "[Grid Handler] No pending algorithm for grid config"
                         logger.error(error_msg)
                         print(error_msg)
                         raise ValueError("Select a pathfinding algorithm first.")
+
+                    algo_key = _normalize_algo_token(str(algo_candidate))
+                    canonical_algo = PATHFINDING_ALIASES.get(algo_key, None)
+                    if not canonical_algo and algo_candidate in PATHFINDING_BUILDERS:
+                        canonical_algo = algo_candidate
+                    if not canonical_algo:
+                        error_msg = f"[Grid Handler] Unknown pathfinding algorithm: {algo_candidate}"
+                        logger.error(error_msg)
+                        print(error_msg)
+                        raise ValueError(f"Unknown algorithm. Supported: {', '.join(sorted(PATHFINDING_BUILDERS.keys()))}.")
                     
                     # Validate grid config - check if it's a dict with expected keys
                     if isinstance(grid_config, dict):
@@ -1233,12 +1260,12 @@ class AlgorithmSessionManager:
                         logger.info(log_msg)
                         print(log_msg)
                         
-                        builder = PATHFINDING_BUILDERS[session.pending_algorithm]
-                        log_msg = f"[Grid Handler] Calling builder for {session.pending_algorithm}"
+                        builder = PATHFINDING_BUILDERS[canonical_algo]
+                        log_msg = f"[Grid Handler] Calling builder for {canonical_algo}"
                         logger.info(log_msg)
                         print(log_msg)
                         steps = builder(grid_config)
-                        session.algorithm = session.pending_algorithm
+                        session.algorithm = canonical_algo
                         session.state = AlgorithmRunner(session.algorithm, steps)
                         session.pending_algorithm = None
                         session.stage = "visualizing"
@@ -1284,36 +1311,36 @@ class AlgorithmSessionManager:
         if lowered in MENU_SELECTION_NUMBERS["sorting"]:
             session.stage = "sorting_menu"
             session.pending_algorithm = None
-            return self._sorting_menu_payload()
+            return _sorting_menu_payload()
         
         if lowered in MENU_SELECTION_NUMBERS["pathfinding"]:
             session.stage = "pathfinding_menu"
             session.pending_algorithm = None
-            return self._pathfinding_menu_payload()
+            return _pathfinding_menu_payload()
         
         if lowered in MENU_SELECTION_NUMBERS["data_structures"]:
             session.stage = "menu"
-            return self._coming_soon_payload("Data Structures")
+            return _coming_soon_payload("Data Structures")
 
         # Check if any sorting keyword appears in the input
         if any(keyword in lowered for keyword in MENU_SORTING_KEYWORDS):
             session.stage = "sorting_menu"
             session.pending_algorithm = None
-            return self._sorting_menu_payload()
+            return _sorting_menu_payload()
 
         # Check if any pathfinding keyword appears in the input
         if any(keyword in lowered for keyword in MENU_PATHFINDING_KEYWORDS):
             session.stage = "pathfinding_menu"
             session.pending_algorithm = None
-            return self._pathfinding_menu_payload()
+            return _pathfinding_menu_payload()
 
         # Check if any data structure keyword appears in the input
         if any(keyword in lowered for keyword in MENU_DATA_STRUCTURE_KEYWORDS):
             session.stage = "menu"
-            return self._coming_soon_payload("Data Structures")
+            return _coming_soon_payload("Data Structures")
 
         # Check for algorithm selection - try exact match first, then search within input
-        selection_algorithm = self._match_sorting_selection(lowered)
+        selection_algorithm = _match_sorting_selection(lowered)
         if not selection_algorithm:
             # Try to find algorithm keywords within the input
             for keyword, algo_name in SORTING_SELECTION_KEYWORDS.items():
@@ -1324,14 +1351,14 @@ class AlgorithmSessionManager:
         if selection_algorithm:
             session.pending_algorithm = selection_algorithm
             session.stage = "await_array"
-            return self._prompt_array_payload(selection_algorithm)
+            return _prompt_array_payload(selection_algorithm)
 
-        if session.stage == "await_array" and self._is_array_literal(stripped):
+        if session.stage == "await_array" and _is_array_literal(stripped):
             if not session.pending_algorithm:
                 raise ValueError(
                     "Select a sorting algorithm before entering the array."
                 )
-            array_values = self._parse_array(stripped)
+            array_values = _parse_array(stripped)
             builder = ALGORITHM_BUILDERS[session.pending_algorithm]
             steps = builder(array_values)
             session.algorithm = session.pending_algorithm
@@ -1350,7 +1377,7 @@ class AlgorithmSessionManager:
                 )
             array_literal = visualize_match.group("array").strip()
             try:
-                array_values = self._parse_array(array_literal)
+                array_values = _parse_array(array_literal)
             except ValueError:
                 raise ValueError(
                     "Invalid array literal. Use comma-separated integers inside brackets, e.g. [5, 2, 1]."
@@ -1427,181 +1454,214 @@ class AlgorithmSessionManager:
             "Unknown command or invalid syntax. Type 'menu' to restart or 'visualize bubble sort on [5,2,1]'."
         )
 
-    @staticmethod
-    def _match_sorting_selection(token: str) -> Optional[str]:
-        if token in SORTING_NUMBER_TO_ALGORITHM:
-            return SORTING_NUMBER_TO_ALGORITHM[token]
-        return SORTING_SELECTION_KEYWORDS.get(token)
 
-    @staticmethod
-    def _match_pathfinding_selection(token: str) -> Optional[str]:
-        if token in PATHFINDING_NUMBER_TO_ALGORITHM:
-            return PATHFINDING_NUMBER_TO_ALGORITHM[token]
-        return PATHFINDING_SELECTION_KEYWORDS.get(token)
+def _match_sorting_selection(token: str) -> Optional[str]:
+    if token in SORTING_NUMBER_TO_ALGORITHM:
+        return SORTING_NUMBER_TO_ALGORITHM[token]
+    return SORTING_SELECTION_KEYWORDS.get(token)
 
-    @staticmethod
-    def _menu_payload() -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "menu",
-            "message": MAIN_MENU_MESSAGE,
-            "options": [
-                {"id": "1", "label": "Sorting Algorithms"},
-                {"id": "2", "label": "Pathfinding Algorithms"},
-                {"id": "3", "label": "Data Structures (coming soon)"},
-            ],
-        }
 
-    @staticmethod
-    def _sorting_menu_payload() -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "sorting_menu",
-            "message": SORTING_MENU_MESSAGE,
-            "options": [
-                {"id": "1", "label": "Bubble Sort"},
-                {"id": "2", "label": "Merge Sort"},
-                {"id": "3", "label": "Selection Sort"},
-                {"id": "4", "label": "Insertion Sort"},
-                {"id": "5", "label": "Quick Sort"},
-                {"id": "6", "label": "Heap Sort"},
-            ],
-        }
+def _normalize_algo_token(token: str) -> str:
+    return token.strip().lower().replace('"', "'").replace("’", "'")
 
-    @staticmethod
-    def _pathfinding_menu_payload() -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "pathfinding_menu",
-            "message": PATHFINDING_MENU_MESSAGE,
-            "options": [
-                {"id": "1", "label": "Dijkstra's Algorithm"},
-                {"id": "2", "label": "A* (A-Star)"},
-                {"id": "3", "label": "Breadth-First Search (BFS)"},
-                {"id": "4", "label": "Depth-First Search (DFS)"},
-            ],
-        }
 
-    @staticmethod
-    def _prompt_array_payload(algorithm: str) -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "await_array",
-            "algorithm": algorithm,
-            "message": (
-                f"Enter the array for {algorithm} as comma-separated integers. "
-                "Example: 5, 2, 9, 1. Type 'menu' to go back."
-            ),
-        }
+def _match_pathfinding_selection(token: str) -> Optional[str]:
+    normalized = _normalize_algo_token(token)
+    if normalized in PATHFINDING_NUMBER_TO_ALGORITHM:
+        return PATHFINDING_NUMBER_TO_ALGORITHM[normalized]
+    if normalized in PATHFINDING_ALIASES:
+        return PATHFINDING_ALIASES[normalized]
+    return None
+ 
 
-    @staticmethod
-    def _prompt_graph_payload(algorithm: str) -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "await_grid",
-            "algorithm": algorithm,
-            "grid_size": {"rows": 15, "cols": 15},
-            "message": (
-                f"Configure the grid for {algorithm}. "
-                "You can:\n"
-                "- Select start and end points\n"
-                "- Draw barriers/walls\n"
-                "- Or use preset maps: 'easy', 'medium', or 'hard'\n"
-                "Type 'menu' to go back."
-            ),
-        }
+def _menu_payload() -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "menu",
+        "message": MAIN_MENU_MESSAGE,
+        "options": [
+            {"id": "1", "label": "Sorting Algorithms"},
+            {"id": "2", "label": "Pathfinding Algorithms"},
+            {"id": "3", "label": "Data Structures (coming soon)"},
+        ],
+    }
 
-    @staticmethod
-    def _generate_default_map(difficulty: str) -> Dict[str, Any]:
-        """Generate default grid maps for easy, medium, and hard difficulty levels."""
-        rows, cols = 15, 15
-        barriers = []
-        
-        if difficulty == "easy":
-            # Easy: Few barriers, mostly open path
-            # Add some scattered barriers
-            barriers = [
-                [3, 5], [3, 6], [3, 7],
-                [7, 8], [7, 9], [7, 10],
-                [11, 3], [11, 4], [11, 5],
-            ]
-            start = [0, 0]
-            end = [14, 14]
-        
-        elif difficulty == "medium":
-            # Medium: Moderate barriers creating some maze-like structure
-            barriers = [
-                # Horizontal walls
-                [2, 2], [2, 3], [2, 4], [2, 5], [2, 6],
-                [5, 8], [5, 9], [5, 10], [5, 11], [5, 12],
-                [8, 1], [8, 2], [8, 3], [8, 4],
-                [11, 6], [11, 7], [11, 8], [11, 9], [11, 10],
-                # Vertical walls
-                [3, 7], [4, 7], [5, 7],
-                [7, 5], [8, 5], [9, 5], [10, 5],
-                [9, 11], [10, 11], [11, 11], [12, 11],
-            ]
-            start = [0, 0]
-            end = [14, 14]
-        
-        elif difficulty == "hard":
-            # Hard: Complex maze with multiple paths and dead ends
-            barriers = [
-                # Outer walls with gaps
-                [1, 1], [1, 2], [1, 3], [1, 4], [1, 5], [1, 6], [1, 7], [1, 8], [1, 9], [1, 10], [1, 11], [1, 12], [1, 13],
-                [13, 1], [13, 2], [13, 3], [13, 4], [13, 5], [13, 6], [13, 7], [13, 8], [13, 9], [13, 10], [13, 11], [13, 12], [13, 13],
-                # Inner maze structure
-                [3, 3], [3, 4], [3, 5], [3, 6], [3, 7], [3, 8], [3, 9], [3, 10], [3, 11],
-                [5, 2], [5, 3], [5, 4], [5, 5], [5, 6], [5, 7], [5, 8], [5, 9], [5, 10], [5, 11], [5, 12],
-                [7, 1], [7, 2], [7, 3], [7, 4], [7, 5], [7, 6], [7, 7], [7, 8], [7, 9], [7, 10], [7, 11], [7, 12], [7, 13],
-                [9, 2], [9, 3], [9, 4], [9, 5], [9, 6], [9, 7], [9, 8], [9, 9], [9, 10], [9, 11], [9, 12],
-                [11, 1], [11, 2], [11, 3], [11, 4], [11, 5], [11, 6], [11, 7], [11, 8], [11, 9], [11, 10], [11, 11], [11, 12], [11, 13],
-                # Vertical barriers
-                [2, 4], [3, 4], [4, 4],
-                [4, 8], [5, 8], [6, 8],
-                [6, 12], [7, 12], [8, 12],
-                [8, 6], [9, 6], [10, 6],
-                [10, 10], [11, 10], [12, 10],
-            ]
-            start = [0, 0]
-            end = [14, 14]
-        
-        return {
-            "start": start,
-            "end": end,
-            "barriers": barriers,
-            "grid_size": {"rows": rows, "cols": cols},
-        }
 
-    @staticmethod
-    def _coming_soon_payload(topic: str) -> Dict[str, Any]:
-        return {
-            "status": "success",
-            "type": "info",
-            "message": f"{topic} visualizations are coming soon. Type 'menu' to go back.",
-        }
+def _sorting_menu_payload() -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "sorting_menu",
+        "message": SORTING_MENU_MESSAGE,
+        "options": [
+            {"id": "1", "label": "Bubble Sort"},
+            {"id": "2", "label": "Merge Sort"},
+            {"id": "3", "label": "Selection Sort"},
+            {"id": "4", "label": "Insertion Sort"},
+            {"id": "5", "label": "Quick Sort"},
+            {"id": "6", "label": "Heap Sort"},
+        ],
+    }
 
-    @staticmethod
-    def _is_array_literal(text: str) -> bool:
-        stripped = text.strip()
-        if stripped.startswith("[") and stripped.endswith("]"):
-            inner = stripped[1:-1].strip()
-            return True if not inner else bool(ARRAY_INPUT_RE.match(inner))
-        return bool(ARRAY_INPUT_RE.match(stripped))
 
-    @staticmethod
-    def _parse_array(array_literal: str) -> List[int]:
-        cleaned = array_literal.strip()
-        if cleaned.startswith("[") and cleaned.endswith("]"):
-            cleaned = cleaned[1:-1].strip()
-        if not cleaned:
-            return []
-        tokens = [token.strip() for token in cleaned.split(",")]
-        result: List[int] = []
-        for token in tokens:
-            if token == "":
-                continue
-            result.append(int(token))
-        return result
+def _pathfinding_menu_payload() -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "pathfinding_menu",
+        "message": PATHFINDING_MENU_MESSAGE,
+        "options": [
+            {"id": "1", "label": "Dijkstra's Algorithm"},
+            {"id": "2", "label": "A* (A-Star)"},
+            {"id": "3", "label": "Breadth-First Search (BFS)"},
+            {"id": "4", "label": "Depth-First Search (DFS)"},
+        ],
+    }
+
+
+def _prompt_array_payload(algorithm: str) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "await_array",
+        "algorithm": algorithm,
+        "message": (
+            f"Enter the array for {algorithm} as comma-separated integers. "
+            "Example: 5, 2, 9, 1. Type 'menu' to go back."
+        ),
+    }
+
+
+def _prompt_graph_payload(algorithm: str) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "await_grid",
+        "algorithm": algorithm,
+        "grid_size": {"rows": 10, "cols": 10},
+        "message": (
+            f"Configure the grid for {algorithm}. "
+            "You can:\n"
+            "- Select start and end points\n"
+            "- Draw barriers/walls\n"
+            "- Or use preset maps: 'easy', 'medium', or 'hard'\n"
+            "Type 'menu' to go back."
+        ),
+    }
+
+
+def _generate_default_map(difficulty: str) -> Dict[str, Any]:
+    """Generate default grid maps for easy, medium, and hard difficulty levels."""
+    rows, cols = 10, 10
+    barriers: List[List[int]] = []
+
+    if difficulty == "easy":
+        # Easy: few barriers, mostly open path
+        barriers = [
+            [2, 3],
+            [2, 4],
+            [2, 5],
+            [5, 6],
+            [6, 6],
+            [7, 6],
+        ]
+        start = [0, 0]
+        end = [9, 9]
+
+    elif difficulty == "medium":
+        # Medium: some maze-like structure
+        barriers = [
+            # Horizontal walls
+            [1, 1],
+            [1, 2],
+            [1, 3],
+            [3, 5],
+            [3, 6],
+            [3, 7],
+            [6, 2],
+            [6, 3],
+            [6, 4],
+            # Vertical walls
+            [2, 4],
+            [3, 4],
+            [4, 4],
+            [5, 7],
+            [6, 7],
+            [7, 7],
+        ]
+        start = [0, 0]
+        end = [9, 9]
+
+    elif difficulty == "hard":
+        # Hard: denser maze with multiple paths
+        barriers = [
+            # Outer-ish ring
+            [1, 1],
+            [1, 2],
+            [1, 3],
+            [1, 4],
+            [1, 5],
+            [1, 6],
+            [1, 7],
+            [2, 7],
+            [3, 7],
+            [4, 7],
+            [5, 7],
+            [6, 7],
+            [7, 7],
+            [7, 6],
+            [7, 5],
+            [7, 4],
+            [7, 3],
+            [7, 2],
+            [7, 1],
+            # Inner barriers
+            [3, 2],
+            [3, 3],
+            [3, 4],
+            [4, 4],
+            [5, 4],
+            [5, 5],
+            [5, 6],
+            [2, 5],
+            [4, 2],
+            [6, 5],
+        ]
+        start = [0, 0]
+        end = [9, 9]
+
+    return {
+        "start": start,
+        "end": end,
+        "barriers": barriers,
+        "grid_size": {"rows": rows, "cols": cols},
+    }
+
+
+def _coming_soon_payload(topic: str) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "info",
+        "message": f"{topic} visualizations are coming soon. Type 'menu' to go back.",
+    }
+
+
+def _is_array_literal(text: str) -> bool:
+    stripped = text.strip()
+    if stripped.startswith("[") and stripped.endswith("]"):
+        inner = stripped[1:-1].strip()
+        return True if not inner else bool(ARRAY_INPUT_RE.match(inner))
+    return bool(ARRAY_INPUT_RE.match(stripped))
+
+
+def _parse_array(array_literal: str) -> List[int]:
+    cleaned = array_literal.strip()
+    if cleaned.startswith("[") and cleaned.endswith("]"):
+        cleaned = cleaned[1:-1].strip()
+    if not cleaned:
+        return []
+    tokens = [token.strip() for token in cleaned.split(",")]
+    result: List[int] = []
+    for token in tokens:
+        if token == "":
+            continue
+        result.append(int(token))
+    return result
 
 

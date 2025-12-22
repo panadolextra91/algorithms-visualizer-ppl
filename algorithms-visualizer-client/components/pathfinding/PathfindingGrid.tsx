@@ -7,7 +7,7 @@ import {
   ScrollView,
   Alert,
 } from 'react-native';
-import ApiClient from '@/services/api/client';
+import ApiClient, { ApiResponse } from '@/services/api/client';
 
 type CellType = 'empty' | 'start' | 'end' | 'barrier';
 
@@ -16,6 +16,7 @@ interface PathfindingGridProps {
   gridSize: { rows: number; cols: number };
   sessionId: string;
   onGridConfigured: () => void;
+  onVisualizationResponse?: (response: ApiResponse) => void;
 }
 
 export default function PathfindingGrid({
@@ -23,6 +24,7 @@ export default function PathfindingGrid({
   gridSize,
   sessionId,
   onGridConfigured,
+  onVisualizationResponse,
 }: PathfindingGridProps) {
   const { rows, cols } = gridSize;
   const [grid, setGrid] = useState<CellType[][]>(
@@ -134,6 +136,7 @@ export default function PathfindingGrid({
     });
 
     const gridConfig = {
+      algorithm,
       start: startPos,
       end: endPos,
       barriers: barriers,
@@ -161,6 +164,10 @@ export default function PathfindingGrid({
         response,
       });
       if (response.status === 'success') {
+        // Notify parent (Chat) so it can feed this into the visualization store
+        if (onVisualizationResponse) {
+          onVisualizationResponse(response);
+        }
         onGridConfigured();
       } else {
         console.error('[PathfindingGrid] Server returned error:', response.message);
@@ -176,7 +183,7 @@ export default function PathfindingGrid({
       Alert.alert('Error', error.message || 'Failed to start visualization');
       setIsSubmitting(false);
     }
-  }, [grid, startPos, endPos, sessionId, onGridConfigured, isSubmitting]);
+  }, [grid, startPos, endPos, sessionId, onGridConfigured, onVisualizationResponse, isSubmitting]);
 
   const cellSize = Math.min(300 / cols, 300 / rows);
 

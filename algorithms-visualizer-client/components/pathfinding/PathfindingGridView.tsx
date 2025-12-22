@@ -35,7 +35,8 @@ const PathfindingGridView: React.FC<Props> = ({ grid }) => {
     else if (isEnd) backgroundColor = '#ef4444';
     else if (isPath) backgroundColor = '#fbbf24';
     else if (isFrontier) backgroundColor = '#38bdf8';
-    else if (isVisited) backgroundColor = '#3b82f6';
+    // Visited cells in light grey to distinguish them from the final path
+    else if (isVisited) backgroundColor = '#d1d5db';
 
     return (
       <View
@@ -66,7 +67,8 @@ const PathfindingGridView: React.FC<Props> = ({ grid }) => {
         <LegendItem label="Start" color="#10b981" />
         <LegendItem label="End" color="#ef4444" />
         <LegendItem label="Barrier" color="#111827" />
-        <LegendItem label="Visited" color="#3b82f6" />
+        {/* Visited matches the light grey used in the grid */}
+        <LegendItem label="Visited" color="#d1d5db" />
         <LegendItem label="Frontier" color="#38bdf8" />
         <LegendItem label="Path" color="#fbbf24" />
       </View>
