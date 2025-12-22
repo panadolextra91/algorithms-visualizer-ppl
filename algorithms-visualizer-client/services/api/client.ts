@@ -11,6 +11,8 @@ export interface ApiResponse {
   message?: string;
   algorithm?: string;
   step?: number;
+  // Present on visualization_step responses from the server
+  isFinal?: boolean;
   data?: {
     array?: number[];
     highlighted_indices?: number[];
