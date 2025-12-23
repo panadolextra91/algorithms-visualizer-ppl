@@ -10,6 +10,7 @@ export interface ApiResponse {
   type?: string;
   message?: string;
   algorithm?: string;
+  data_structure?: string;
   step?: number;
   // Present on visualization_step responses from the server
   isFinal?: boolean;
@@ -17,6 +18,21 @@ export interface ApiResponse {
     array?: number[];
     highlighted_indices?: number[];
     sorted_indices?: number[];
+    // Data structure payloads
+    type?: 'array' | 'stack' | 'queue' | 'linked_list';
+    values?: number[];
+    top_index?: number;
+    operation?: string;
+    pushed_value?: number;
+    popped_value?: number;
+    front_index?: number;
+    rear_index?: number;
+    enqueued_value?: number;
+    dequeued_value?: number;
+    nodes?: { value: number; next: number | null }[];
+    head_index?: number | null;
+    current_index?: number | null;
+    visited_indices?: number[];
   };
   explanation?: string;
   options?: { id: string; label: string }[];

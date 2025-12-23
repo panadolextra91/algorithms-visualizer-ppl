@@ -84,6 +84,43 @@ export default function ChatScreen() {
   };
 
   const maybeHandleVisualizationResponse = (response: ApiResponse): boolean => {
+    const isDataStructureStep =
+      response.type === 'data_structure_step' &&
+      !!response.data_structure &&
+      !!response.data &&
+      !!response.explanation;
+
+    if (isDataStructureStep) {
+      addVisualizationStep({
+        algorithm: response.data_structure as string,
+        dataStructure: response.data_structure as string,
+        step: response.step ?? 0,
+        data: {
+          dataStructureState: {
+            type: (response.data?.type as any) ?? 'array',
+            values: response.data?.values,
+            highlighted_indices: response.data?.highlighted_indices,
+            top_index: response.data?.top_index,
+            operation: response.data?.operation,
+            pushed_value: response.data?.pushed_value,
+            popped_value: response.data?.popped_value,
+            front_index: response.data?.front_index,
+            rear_index: response.data?.rear_index,
+            enqueued_value: response.data?.enqueued_value,
+            dequeued_value: response.data?.dequeued_value,
+            nodes: response.data?.nodes,
+            head_index: response.data?.head_index,
+            current_index: response.data?.current_index,
+            visited_indices: response.data?.visited_indices,
+          },
+        },
+        explanation: response.explanation,
+        isFinal: response.isFinal === true,
+      });
+      ensureVisualizationMessage(false);
+      return true;
+    }
+
     const hasGrid = !!(response as any)?.data?.grid;
     if (hasGrid) {
       console.log('[Chat] Received grid visualization step', {
@@ -139,7 +176,12 @@ export default function ChatScreen() {
 
   const convertResponseToMessages = useCallback(
     (response: ApiResponse): Message[] => {
-      if (response.type === 'menu' || response.type === 'sorting_menu') {
+      if (
+        response.type === 'menu' ||
+        response.type === 'sorting_menu' ||
+        response.type === 'data_structure_menu' ||
+        response.type === 'pathfinding_menu'
+      ) {
         return [
           {
             id: `${response.type}-${Date.now()}`,
@@ -299,7 +341,7 @@ export default function ChatScreen() {
         type: 'text',
       };
 
-      if (trimmed.toLowerCase() === 'reset') {
+      if (trimmed.toLowerCase() === 'reset' || trimmed.toLowerCase() === 'menu') {
         resetVisualization();
       }
 

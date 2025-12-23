@@ -12,15 +12,38 @@ export interface VisualizationGridData {
 
 export interface VisualizationStepData {
   algorithm: string;
+  dataStructure?: string;
   step: number;
   data: {
     array?: number[];
     highlighted_indices?: number[];
     sorted_indices?: number[];
     grid?: VisualizationGridData;
+    dataStructureState?: DataStructureState;
   };
   explanation: string;
   isFinal?: boolean;
+}
+
+export interface DataStructureState {
+  type: 'array' | 'stack' | 'queue' | 'linked_list';
+  values?: number[];
+  highlighted_indices?: number[];
+  // Stack-specific
+  top_index?: number;
+  operation?: string;
+  pushed_value?: number;
+  popped_value?: number;
+  // Queue-specific
+  front_index?: number;
+  rear_index?: number;
+  enqueued_value?: number;
+  dequeued_value?: number;
+  // Linked list specific
+  nodes?: { value: number; next: number | null }[];
+  head_index?: number | null;
+  current_index?: number | null;
+  visited_indices?: number[];
 }
 
 interface VisualizationStore {

@@ -178,6 +178,51 @@ PATHFINDING_MENU_MESSAGE = (
     "Reply with the algorithm name or number, or type 'menu' to go back."
 )
 
+DATA_STRUCTURE_NUMBER_TO_DS = {
+    "1": "Stack (LIFO)",
+    "2": "Queue (FIFO)",
+    "3": "Linked List (Singly)",
+}
+
+DATA_STRUCTURE_SELECTION_KEYWORDS = {
+    # Stack - longer/more specific keywords first
+    "stack data structure": "Stack (LIFO)",
+    "stack structure": "Stack (LIFO)",
+    "lifo stack": "Stack (LIFO)",
+    "lifo": "Stack (LIFO)",
+    "stack": "Stack (LIFO)",
+    "the first": "Stack (LIFO)",
+    "first": "Stack (LIFO)",
+    "1": "Stack (LIFO)",
+    # Queue - longer/more specific keywords first
+    "queue data structure": "Queue (FIFO)",
+    "queue structure": "Queue (FIFO)",
+    "fifo queue": "Queue (FIFO)",
+    "fifo": "Queue (FIFO)",
+    "queue": "Queue (FIFO)",
+    "the second": "Queue (FIFO)",
+    "second": "Queue (FIFO)",
+    "2": "Queue (FIFO)",
+    # Linked List - longer/more specific keywords first
+    "singly linked list": "Linked List (Singly)",
+    "linked list singly": "Linked List (Singly)",
+    "linked list": "Linked List (Singly)",
+    "singly linked": "Linked List (Singly)",
+    "linked": "Linked List (Singly)",
+    "list": "Linked List (Singly)",
+    "the third": "Linked List (Singly)",
+    "third": "Linked List (Singly)",
+    "3": "Linked List (Singly)",
+}
+
+DATA_STRUCTURE_MENU_MESSAGE = (
+    "Data Structures:\n"
+    "1. Stack (LIFO)\n"
+    "2. Queue (FIFO)\n"
+    "3. Linked List (Singly)\n"
+    "Reply with the data structure name or number, or type 'menu' to go back."
+)
+
 ARRAY_INPUT_RE = re.compile(r"^\s*-?\d+(?:\s*,\s*-?\d+)*\s*$")
 
 
@@ -819,6 +864,222 @@ PATHFINDING_BUILDERS: Dict[str, Callable[[Dict[str, Any]], List[Dict[str, Any]]]
     "Depth-First Search (DFS)": generate_dfs_steps,
 }
 
+# -------- Data Structure visualization builders --------
+
+def _make_data_structure_step(
+    data_structure: str,
+    data: Dict[str, Any],
+    explanation: str,
+    step_number: int,
+    is_final: bool = False,
+) -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "data_structure_step",
+        "data_structure": data_structure,
+        "step": step_number,
+        "isFinal": is_final,
+        "data": data,
+        "explanation": explanation,
+    }
+
+
+def generate_stack_steps(initial_values: List[int]) -> List[Dict[str, Any]]:
+    """Generate visualization steps for Stack (LIFO) operations."""
+    steps = []
+    step_num = 1
+    stack = list(initial_values)
+    
+    # Initial state
+    steps.append(_make_data_structure_step(
+        "Stack (LIFO)",
+        {
+            "type": "stack",
+            "values": list(stack),
+            "top_index": len(stack) - 1 if stack else -1,
+        },
+        f"Initialized stack with values: {stack} (top is at the end)",
+        step_num
+    ))
+    step_num += 1
+    
+    # Push operation
+    push_value = 99
+    stack.append(push_value)
+    steps.append(_make_data_structure_step(
+        "Stack (LIFO)",
+        {
+            "type": "stack",
+            "values": list(stack),
+            "top_index": len(stack) - 1,
+            "operation": "push",
+            "pushed_value": push_value,
+        },
+        f"Pushed {push_value} onto the stack. Stack now: {stack}",
+        step_num
+    ))
+    step_num += 1
+    
+    # Pop operation
+    if stack:
+        popped = stack.pop()
+        steps.append(_make_data_structure_step(
+            "Stack (LIFO)",
+            {
+                "type": "stack",
+                "values": list(stack),
+                "top_index": len(stack) - 1 if stack else -1,
+                "operation": "pop",
+                "popped_value": popped,
+            },
+            f"Popped {popped} from the stack. Stack now: {stack}",
+            step_num
+        ))
+        step_num += 1
+    
+    if steps:
+        steps[-1]["isFinal"] = True
+    return steps
+
+
+def generate_queue_steps(initial_values: List[int]) -> List[Dict[str, Any]]:
+    """Generate visualization steps for Queue (FIFO) operations."""
+    steps = []
+    step_num = 1
+    queue = list(initial_values)
+    
+    # Initial state
+    steps.append(_make_data_structure_step(
+        "Queue (FIFO)",
+        {
+            "type": "queue",
+            "values": list(queue),
+            "front_index": 0 if queue else -1,
+            "rear_index": len(queue) - 1 if queue else -1,
+        },
+        f"Initialized queue with values: {queue} (front at start, rear at end)",
+        step_num
+    ))
+    step_num += 1
+    
+    # Enqueue operation
+    enqueue_value = 99
+    queue.append(enqueue_value)
+    steps.append(_make_data_structure_step(
+        "Queue (FIFO)",
+        {
+            "type": "queue",
+            "values": list(queue),
+            "front_index": 0,
+            "rear_index": len(queue) - 1,
+            "operation": "enqueue",
+            "enqueued_value": enqueue_value,
+        },
+        f"Enqueued {enqueue_value} to the rear. Queue now: {queue}",
+        step_num
+    ))
+    step_num += 1
+    
+    # Dequeue operation
+    if queue:
+        dequeued = queue.pop(0)
+        steps.append(_make_data_structure_step(
+            "Queue (FIFO)",
+            {
+                "type": "queue",
+                "values": list(queue),
+                "front_index": 0 if queue else -1,
+                "rear_index": len(queue) - 1 if queue else -1,
+                "operation": "dequeue",
+                "dequeued_value": dequeued,
+            },
+            f"Dequeued {dequeued} from the front. Queue now: {queue}",
+            step_num
+        ))
+        step_num += 1
+    
+    if steps:
+        steps[-1]["isFinal"] = True
+    return steps
+
+
+def generate_linked_list_steps(initial_values: List[int]) -> List[Dict[str, Any]]:
+    """Generate visualization steps for Linked List operations."""
+    steps = []
+    step_num = 1
+    
+    # Initial state - represent as list of nodes
+    nodes = [{"value": val, "next": i + 1 if i < len(initial_values) - 1 else None} 
+             for i, val in enumerate(initial_values)]
+    
+    steps.append(_make_data_structure_step(
+        "Linked List (Singly)",
+        {
+            "type": "linked_list",
+            "nodes": nodes,
+            "head_index": 0 if nodes else None,
+        },
+        f"Initialized linked list with values: {initial_values}",
+        step_num
+    ))
+    step_num += 1
+    
+    # Insert at head
+    if nodes:
+        new_node = {"value": 99, "next": 0}
+        nodes.insert(0, new_node)
+        # Update indices
+        nodes = [{"value": node["value"], "next": i + 1 if i < len(nodes) - 1 else None}
+                 for i, node in enumerate(nodes)]
+        steps.append(_make_data_structure_step(
+            "Linked List (Singly)",
+            {
+                "type": "linked_list",
+                "nodes": nodes,
+                "head_index": 0,
+                "operation": "insert_at_head",
+                "inserted_value": 99,
+            },
+            f"Inserted 99 at the head. New head points to the previous head.",
+            step_num
+        ))
+        step_num += 1
+    
+    # Traverse
+    if nodes:
+        current = 0
+        visited = []
+        while current is not None and current < len(nodes):
+            visited.append(current)
+            steps.append(_make_data_structure_step(
+                "Linked List (Singly)",
+                {
+                    "type": "linked_list",
+                    "nodes": nodes,
+                    "head_index": 0,
+                    "operation": "traverse",
+                    "current_index": current,
+                    "visited_indices": visited,
+                },
+                f"Traversing: visited node at index {current} with value {nodes[current]['value']}",
+                step_num
+            ))
+            step_num += 1
+            current = nodes[current]["next"]
+    
+    if steps:
+        steps[-1]["isFinal"] = True
+    return steps
+
+
+DATA_STRUCTURE_BUILDERS: Dict[str, Callable[[List[int]], List[Dict[str, Any]]]] = {
+    "Stack (LIFO)": generate_stack_steps,
+    "Queue (FIFO)": generate_queue_steps,
+    "Linked List (Singly)": generate_linked_list_steps,
+}
+
+DATA_STRUCTURE_ALIASES: Dict[str, str] = dict(DATA_STRUCTURE_SELECTION_KEYWORDS)
+
 ALGORITHM_ALIASES: Dict[str, str] = dict(SORTING_SELECTION_KEYWORDS)
 PATHFINDING_ALIASES: Dict[str, str] = dict(PATHFINDING_SELECTION_KEYWORDS)
 
@@ -1033,6 +1294,58 @@ PATHFINDING_EXPLANATIONS: Dict[str, str] = {
     ),
 }
 
+DATA_STRUCTURE_EXPLANATIONS: Dict[str, str] = {
+    "Stack (LIFO)": (
+        "THEORY:\n"
+        "A Stack is a linear data structure that follows Last-In-First-Out (LIFO) principle. Elements are added "
+        "and removed from the same end called the 'top'. Think of it like a stack of plates - you add and remove from the top.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Push: Add element to the top of the stack\n"
+        "2. Pop: Remove and return the top element\n"
+        "3. Peek/Top: View the top element without removing it\n"
+        "4. IsEmpty: Check if stack is empty\n"
+        "5. Operations only happen at one end (top)\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Push O(1), Pop O(1), Peek O(1)\n"
+        "• Space Complexity: O(n)\n"
+        "• Access Pattern: LIFO (Last In, First Out)\n"
+        "• Use Case: Function call stack, expression evaluation, undo operations, backtracking algorithms, parsing"
+    ),
+    "Queue (FIFO)": (
+        "THEORY:\n"
+        "A Queue is a linear data structure that follows First-In-First-Out (FIFO) principle. Elements are added "
+        "at the rear (enqueue) and removed from the front (dequeue). Think of it like a line of people waiting.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Enqueue: Add element to the rear of the queue\n"
+        "2. Dequeue: Remove and return element from the front\n"
+        "3. Front: View the front element without removing it\n"
+        "4. Rear: View the rear element\n"
+        "5. IsEmpty: Check if queue is empty\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Enqueue O(1), Dequeue O(1), Front O(1)\n"
+        "• Space Complexity: O(n)\n"
+        "• Access Pattern: FIFO (First In, First Out)\n"
+        "• Use Case: Task scheduling, breadth-first search, printer queues, message queues, request handling"
+    ),
+    "Linked List (Singly)": (
+        "THEORY:\n"
+        "A Linked List is a linear data structure where elements are stored in nodes, and each node contains "
+        "data and a reference (pointer) to the next node. Unlike arrays, elements are not stored in contiguous memory.\n\n"
+        "HOW IT WORKS:\n"
+        "1. Each node contains: data and next pointer\n"
+        "2. Head pointer points to the first node\n"
+        "3. Last node's next pointer is NULL/None\n"
+        "4. Insertion: Create new node, update pointers\n"
+        "5. Deletion: Update pointers to bypass node\n"
+        "6. Traversal: Follow next pointers from head\n\n"
+        "STATISTICS:\n"
+        "• Time Complexity: Access O(n), Search O(n), Insert/Delete O(1) at head, O(n) elsewhere\n"
+        "• Space Complexity: O(n)\n"
+        "• Dynamic Size: Yes (can grow/shrink)\n"
+        "• Use Case: Dynamic memory allocation, implementing stacks/queues, when insertion/deletion is frequent"
+    ),
+}
+
 
 @dataclass
 class AlgorithmRunner:
@@ -1141,6 +1454,21 @@ class AlgorithmSessionManager:
                 session.pending_algorithm = selection_algorithm
                 session.stage = "await_grid"
                 return _prompt_graph_payload(selection_algorithm)
+
+        # If in data_structure_menu stage, prioritize data structure selection over menu selection
+        if session.stage == "data_structure_menu":
+            selection_ds = _match_data_structure_selection(lowered)
+            if not selection_ds:
+                # Try to find data structure keywords within the input
+                for keyword, ds_name in DATA_STRUCTURE_SELECTION_KEYWORDS.items():
+                    if keyword in lowered:
+                        selection_ds = ds_name
+                        break
+            
+            if selection_ds:
+                session.pending_algorithm = selection_ds
+                session.stage = "await_array"
+                return _prompt_array_payload(selection_ds)
 
         stripped_clean_for_grid = stripped.strip()
         looks_like_json_grid = (
@@ -1319,8 +1647,9 @@ class AlgorithmSessionManager:
             return _pathfinding_menu_payload()
         
         if lowered in MENU_SELECTION_NUMBERS["data_structures"]:
-            session.stage = "menu"
-            return _coming_soon_payload("Data Structures")
+            session.stage = "data_structure_menu"
+            session.pending_algorithm = None
+            return _data_structure_menu_payload()
 
         # Check if any sorting keyword appears in the input
         if any(keyword in lowered for keyword in MENU_SORTING_KEYWORDS):
@@ -1336,8 +1665,9 @@ class AlgorithmSessionManager:
 
         # Check if any data structure keyword appears in the input
         if any(keyword in lowered for keyword in MENU_DATA_STRUCTURE_KEYWORDS):
-            session.stage = "menu"
-            return _coming_soon_payload("Data Structures")
+            session.stage = "data_structure_menu"
+            session.pending_algorithm = None
+            return _data_structure_menu_payload()
 
         # Check for algorithm selection - try exact match first, then search within input
         selection_algorithm = _match_sorting_selection(lowered)
@@ -1356,16 +1686,31 @@ class AlgorithmSessionManager:
         if session.stage == "await_array" and _is_array_literal(stripped):
             if not session.pending_algorithm:
                 raise ValueError(
-                    "Select a sorting algorithm before entering the array."
+                    "Select an algorithm or data structure before entering the array."
                 )
             array_values = _parse_array(stripped)
-            builder = ALGORITHM_BUILDERS[session.pending_algorithm]
-            steps = builder(array_values)
-            session.algorithm = session.pending_algorithm
-            session.state = AlgorithmRunner(session.algorithm, steps)
-            session.pending_algorithm = None
-            session.stage = "visualizing"
-            return session.state.step()
+            
+            # Check if it's a data structure or sorting algorithm
+            if session.pending_algorithm in DATA_STRUCTURE_BUILDERS:
+                builder = DATA_STRUCTURE_BUILDERS[session.pending_algorithm]
+                steps = builder(array_values)
+                session.algorithm = session.pending_algorithm
+                session.state = AlgorithmRunner(session.algorithm, steps)
+                session.pending_algorithm = None
+                session.stage = "visualizing"
+                return session.state.step()
+            elif session.pending_algorithm in ALGORITHM_BUILDERS:
+                builder = ALGORITHM_BUILDERS[session.pending_algorithm]
+                steps = builder(array_values)
+                session.algorithm = session.pending_algorithm
+                session.state = AlgorithmRunner(session.algorithm, steps)
+                session.pending_algorithm = None
+                session.stage = "visualizing"
+                return session.state.step()
+            else:
+                raise ValueError(
+                    f"Unknown algorithm or data structure: {session.pending_algorithm}"
+                )
 
         visualize_match = self.VISUALIZE_RE.match(command)
         if visualize_match:
@@ -1421,18 +1766,29 @@ class AlgorithmSessionManager:
                         if keyword in lowered:
                             algorithm_to_explain = algo_name
                             break
+                
+                # Check data structures if not found
+                if not algorithm_to_explain:
+                    for keyword, ds_name in DATA_STRUCTURE_SELECTION_KEYWORDS.items():
+                        if keyword in lowered:
+                            algorithm_to_explain = ds_name
+                            break
             
             if not algorithm_to_explain:
                 raise ValueError(
-                    "No algorithm specified. Either select an algorithm first, or include the algorithm name in your request (e.g., 'explain bubble sort' or 'explain dijkstra')."
+                    "No algorithm or data structure specified. Either select one first, or include the name in your request (e.g., 'explain bubble sort', 'explain dijkstra', or 'explain array')."
                 )
             
-            # Check both sorting and pathfinding explanations
+            # Check sorting, pathfinding, and data structure explanations
             explanation = ALGORITHM_EXPLANATIONS.get(
                 algorithm_to_explain, None
             )
             if not explanation:
                 explanation = PATHFINDING_EXPLANATIONS.get(
+                    algorithm_to_explain, None
+                )
+            if not explanation:
+                explanation = DATA_STRUCTURE_EXPLANATIONS.get(
                     algorithm_to_explain, "Explanation unavailable."
                 )
             return {
@@ -1472,6 +1828,15 @@ def _match_pathfinding_selection(token: str) -> Optional[str]:
     if normalized in PATHFINDING_ALIASES:
         return PATHFINDING_ALIASES[normalized]
     return None
+
+
+def _match_data_structure_selection(token: str) -> Optional[str]:
+    normalized = _normalize_algo_token(token)
+    if normalized in DATA_STRUCTURE_NUMBER_TO_DS:
+        return DATA_STRUCTURE_NUMBER_TO_DS[normalized]
+    if normalized in DATA_STRUCTURE_SELECTION_KEYWORDS:
+        return DATA_STRUCTURE_SELECTION_KEYWORDS[normalized]
+    return None
  
 
 def _menu_payload() -> Dict[str, Any]:
@@ -1482,7 +1847,7 @@ def _menu_payload() -> Dict[str, Any]:
         "options": [
             {"id": "1", "label": "Sorting Algorithms"},
             {"id": "2", "label": "Pathfinding Algorithms"},
-            {"id": "3", "label": "Data Structures (coming soon)"},
+            {"id": "3", "label": "Data Structures"},
         ],
     }
 
@@ -1513,6 +1878,19 @@ def _pathfinding_menu_payload() -> Dict[str, Any]:
             {"id": "2", "label": "A* (A-Star)"},
             {"id": "3", "label": "Breadth-First Search (BFS)"},
             {"id": "4", "label": "Depth-First Search (DFS)"},
+        ],
+    }
+
+
+def _data_structure_menu_payload() -> Dict[str, Any]:
+    return {
+        "status": "success",
+        "type": "data_structure_menu",
+        "message": DATA_STRUCTURE_MENU_MESSAGE,
+        "options": [
+            {"id": "1", "label": "Stack (LIFO)"},
+            {"id": "2", "label": "Queue (FIFO)"},
+            {"id": "3", "label": "Linked List (Singly)"},
         ],
     }
 

@@ -1,8 +1,9 @@
 import React from 'react';
 import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import BarChart from './BarChart';
+import DataStructureView from '../data-structures/DataStructureView';
 
-import { VisualizationGridData } from '@/stores/visualizationStore';
+import { DataStructureState, VisualizationGridData } from '@/stores/visualizationStore';
 import PathfindingGridView from '../pathfinding/PathfindingGridView';
 
 interface VisualizationMessageProps {
@@ -13,6 +14,7 @@ interface VisualizationMessageProps {
     highlighted_indices?: number[];
     sorted_indices?: number[];
     grid?: VisualizationGridData;
+    dataStructureState?: DataStructureState;
   };
   explanation: string;
   onNextStep?: () => void;
@@ -51,6 +53,8 @@ const VisualizationMessage: React.FC<VisualizationMessageProps> = ({
       
       {data.grid ? (
         <PathfindingGridView grid={data.grid} />
+      ) : data.dataStructureState ? (
+        <DataStructureView state={data.dataStructureState} />
       ) : (
         <BarChart
           data={data.array || []}
