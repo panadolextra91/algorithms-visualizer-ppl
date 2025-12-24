@@ -710,3 +710,5 @@ curl -X POST http://localhost:8069/command \
 - **Extensible**: New algorithms can be added by creating builder functions
 - **Grammar-driven**: DSL structure defined in ANTLR4 grammar file
 - **Pattern matching**: Current implementation uses regex/keyword matching (ANTLR parser available but not actively used)
+
+## Demo
