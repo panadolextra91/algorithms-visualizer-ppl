@@ -343,6 +343,8 @@ export default function ChatScreen() {
 
       if (trimmed.toLowerCase() === 'reset' || trimmed.toLowerCase() === 'menu') {
         resetVisualization();
+        // Remove any existing visualization cards so each new run gets its own card
+        setMessages(prev => prev.filter(msg => msg.type !== 'visualization_card'));
       }
 
       setMessages(prev => [...prev, userMessage]);
