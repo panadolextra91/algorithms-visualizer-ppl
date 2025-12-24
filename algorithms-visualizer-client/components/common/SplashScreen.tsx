@@ -20,7 +20,7 @@ const SplashScreen: React.FC = () => {
       Animated.sequence([
         Animated.timing(pulseAnim, {
           toValue: 1.1,
-          duration: 1000,
+          duration: 200,
           useNativeDriver: true,
         }),
         Animated.timing(pulseAnim, {

@@ -34,14 +34,9 @@ export const PATHFINDING_ALGORITHMS = [
 
 // Data Structures
 export const DATA_STRUCTURES = [
-  'Queue (FIFO)',
-  'Array',
   'Stack (LIFO)',
+  'Queue (FIFO)',
   'Linked List (Singly)',
-  'Linked List (Doubly)',
-  'Binary Search Tree (BST)',
-  'Trie (Prefix Tree)',
-  'Hash Table',
 ] as const;
 
 // Storage Keys

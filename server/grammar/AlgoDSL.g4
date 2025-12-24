@@ -5,6 +5,7 @@ command
     : menuCommand
     | menuSelection
     | sortingAlgorithmSelection
+    | dataStructureSelection
     | arrayInput
     | nextCommand
     | explainCommand
@@ -41,6 +42,16 @@ sortingAlgorithmSelection
     | INSERTION_KEYWORDS  #SelectInsertionSort
     | QUICK_KEYWORDS      #SelectQuickSort
     | HEAP_KEYWORDS       #SelectHeapSort
+    ;
+
+// Data structure selection (numbers or names)
+dataStructureSelection
+    : NUMBER_ONE          #SelectStack
+    | NUMBER_TWO          #SelectQueue
+    | NUMBER_THREE        #SelectLinkedList
+    | STACK_DS            #SelectStack
+    | QUEUE_DS            #SelectQueue
+    | LINKEDLIST_DS       #SelectLinkedList
     ;
 
 // Array input - comma-separated numbers
@@ -96,6 +107,11 @@ SELECTION_KEYWORDS: 'selection sort' | 'selectionsort' | 'selection';
 INSERTION_KEYWORDS: 'insertion sort' | 'insertionsort' | 'insertion';
 QUICK_KEYWORDS: 'quick sort' | 'quicksort' | 'quick';
 HEAP_KEYWORDS: 'heap sort' | 'heapsort' | 'heap';
+
+// Data structure keywords
+STACK_DS: 'stack data structure' | 'stack structure' | 'stack' | 'lifo' | 'lifo stack';
+QUEUE_DS: 'queue data structure' | 'queue structure' | 'queue' | 'fifo' | 'fifo queue';
+LINKEDLIST_DS: 'linked list (singly)' | 'linked list' | 'singly linked list' | 'linked';
 
 // Action commands
 NEXT: 'next';
