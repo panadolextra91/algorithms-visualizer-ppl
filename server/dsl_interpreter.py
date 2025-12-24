@@ -1700,13 +1700,13 @@ class AlgorithmSessionManager:
                 session.stage = "visualizing"
                 return session.state.step()
             elif session.pending_algorithm in ALGORITHM_BUILDERS:
-            builder = ALGORITHM_BUILDERS[session.pending_algorithm]
-            steps = builder(array_values)
-            session.algorithm = session.pending_algorithm
-            session.state = AlgorithmRunner(session.algorithm, steps)
-            session.pending_algorithm = None
-            session.stage = "visualizing"
-            return session.state.step()
+                builder = ALGORITHM_BUILDERS[session.pending_algorithm]
+                steps = builder(array_values)
+                session.algorithm = session.pending_algorithm
+                session.state = AlgorithmRunner(session.algorithm, steps)
+                session.pending_algorithm = None
+                session.stage = "visualizing"
+                return session.state.step()
             else:
                 raise ValueError(
                     f"Unknown algorithm or data structure: {session.pending_algorithm}"
