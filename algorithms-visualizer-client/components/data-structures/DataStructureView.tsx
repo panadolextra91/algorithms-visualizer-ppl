@@ -81,7 +81,7 @@ const DataStructureView: React.FC<Props> = ({ state }) => {
     const visited = new Set(state.visited_indices || []);
     const nodes = state.nodes || [];
     return (
-      <View style={[styles.row, styles.wrap]}>
+      <View style={styles.row}>
         {nodes.map((node, idx) => {
           const isVisited = visited.has(idx);
           const isHead = state.head_index === idx;

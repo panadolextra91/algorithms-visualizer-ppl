@@ -114,7 +114,7 @@ export default function ChatScreen() {
             visited_indices: response.data?.visited_indices,
           },
         },
-        explanation: response.explanation,
+        explanation: response.explanation || '',
         isFinal: response.isFinal === true,
       });
       ensureVisualizationMessage(false);
